@@ -1,6 +1,5 @@
 #include "../include/shell.h"
 #include "../include/prompt.h"
-#include <sys/utsname.h>
 
 char *home_directory = NULL;
 char *username = NULL;
@@ -80,14 +79,16 @@ char* get_current_path_display(void)
             snprintf(display_path, MAX_PATH_SIZE, "~%s", current_path + home_len);
         
         // Current path has home as prefix but not as ancestor
-        else strncpy(display_path, current_path, MAX_PATH_SIZE - 1);
+        else 
+            strncpy(display_path, current_path, MAX_PATH_SIZE - 1);
             
         display_path[MAX_PATH_SIZE - 1] = '\0';
         free(current_path);
         return display_path;
     } 
     // Current path doesn't have home as ancestor
-    else return current_path;
+    else 
+        return current_path;
 }
 
 void display_prompt(void) 
@@ -95,8 +96,10 @@ void display_prompt(void)
     char *display_path = get_current_path_display();
     if (display_path != NULL) 
     {
-        printf("<%s@%s:%s > ", username ? username : "unknown", 
-               system_name ? system_name : "unknown", display_path);
+        printf("<%s@%s:%s> ", 
+               username ? username : "unknown", 
+               system_name ? system_name : "unknown", 
+               display_path);
         fflush(stdout);
         free(display_path);
     }

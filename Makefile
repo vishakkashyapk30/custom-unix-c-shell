@@ -1,13 +1,13 @@
-CC      := gcc
-CFLAGS  := -std=c99 \
+CC	:= gcc
+CFLAGS	:= -std=c99 \
            -D_POSIX_C_SOURCE=200809L \
            -D_XOPEN_SOURCE=700 \
            -Wall -Wextra -Werror \
            -Wno-unused-parameter \
            -fno-asm -I include
 
-SRC     := src/main.c src/prompt.c src/input.c src/parser.c
-OUT     := shell.out
+SRC	:= src/main.c src/prompt.c src/input.c src/parser.c src/builtins.c
+OUT	:= shell.out
 
 # Default target: builds the executable.
 all: $(OUT)
