@@ -80,7 +80,6 @@ void execute_command_no_history(char **args) {
 void builtin_exit(char **args) {
     (void)args; // Suppress unused parameter warning
     save_log_to_file();
-    printf("Exiting shell...\n");
     exit(0);
 }
 
