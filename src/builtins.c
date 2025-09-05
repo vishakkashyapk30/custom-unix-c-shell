@@ -1,305 +1,381 @@
-#include "../include/shell.h"
-#include "../include/prompt.h"
-#include "../include/parser.h"
+#include "builtins.h"
+#include "parser.h"
+#include "input.h"
+#include <ctype.h>
+#include <sys/stat.h>
 
-// Global variables
-char *previous_directory = NULL;
-static char *command_history[15];
-static int history_count = 0;
-static int history_start = 0;
+// Log storage - circular buffer
+static char command_history[15][MAX_INPUT_SIZE];  // Max 15 commands
+static int history_count = 0;  // Total commands added
+static int history_start = 0;  // Start index in circular buffer
 
-// Helper function to tokenize input into arguments using strtok_r for safety
-char** tokenize_input(const char* input) {
-    if (!input) return NULL;
-
-    char** tokens = malloc(MAX_ARGS * sizeof(char*));
-    if (!tokens) return NULL;
-
-    char* input_copy = strdup(input);
-    if (!input_copy) {
-        free(tokens);
-        return NULL;
-    }
-
-    int token_count = 0;
-    char *saveptr; // For strtok_r
-    char* token = strtok_r(input_copy, " \t\n\r", &saveptr);
-
-    while (token != NULL && token_count < MAX_ARGS - 1) {
-        tokens[token_count] = strdup(token);
-        token_count++;
-        token = strtok_r(NULL, " \t\n\r", &saveptr);
-    }
-
-    tokens[token_count] = NULL;
-    free(input_copy);
-    return tokens;
+void initialize_log(void) {
+    load_log_from_file();
 }
 
-void free_tokens(char** tokens) {
-    if (!tokens) return;
-    for (int i = 0; tokens[i] != NULL; i++) {
-        free(tokens[i]);
-    }
-    free(tokens);
-}
-
-// Helper function to add command to history
-void add_to_history(const char *command) {
+void add_to_log(const char *command) {
     if (!command || strlen(command) == 0) return;
-
-    // Don't add if it's a log command
-    if (strncmp(command, "log", 3) == 0 && (command[3] == ' ' || command[3] == '\0')) {
-        return;
-    }
-
-    // Don't add if identical to the last command
+    
+    // Don't add if identical to last command
     if (history_count > 0) {
-        int last_index = (history_start + history_count - 1) % 15;
-        if (command_history[last_index] && strcmp(command_history[last_index], command) == 0) {
+        int last_idx = (history_start + (history_count - 1)) % 15;
+        if (strcmp(command_history[last_idx], command) == 0) {
             return;
         }
     }
-
-    int index_to_add;
+    
+    // Add to circular buffer
     if (history_count < 15) {
-        index_to_add = (history_start + history_count) % 15;
+        // Buffer not full yet
+        int idx = (history_start + history_count) % 15;
+        strncpy(command_history[idx], command, MAX_INPUT_SIZE - 1);
+        command_history[idx][MAX_INPUT_SIZE - 1] = '\0';
         history_count++;
     } else {
-        index_to_add = history_start;
-        free(command_history[index_to_add]);
+        // Buffer full, overwrite oldest
+        strncpy(command_history[history_start], command, MAX_INPUT_SIZE - 1);
+        command_history[history_start][MAX_INPUT_SIZE - 1] = '\0';
         history_start = (history_start + 1) % 15;
     }
-
-    command_history[index_to_add] = strdup(command);
+    
+    save_log_to_file();
 }
 
-// Helper function to execute a command without adding to history
-void execute_command_no_history(char **args) {
-    if (args == NULL || args[0] == NULL) {
+void print_log(void) {
+    if (history_count == 0) {
         return;
     }
+    
+    // Print in order: oldest to newest
+    for (int i = 0; i < history_count; i++) {
+        int idx = (history_start + i) % 15;
+        printf("%s\n", command_history[idx]);
+    }
+}
+
+void purge_log(void) {
+    history_count = 0;
+    history_start = 0;
+    save_log_to_file();
+}
+
+void execute_command_no_history(char **args) {
+    // This function executes a command without adding it to history
+    if (!args || !args[0]) return;
+    
     if (strcmp(args[0], "hop") == 0) {
         builtin_hop(args);
     } else if (strcmp(args[0], "reveal") == 0) {
         builtin_reveal(args);
     } else if (strcmp(args[0], "log") == 0) {
-        // Don't execute log from log execute to prevent recursion
-        printf("Cannot execute log command from history\n");
+        builtin_log(args);
+    } else if (strcmp(args[0], "exit") == 0) {
+        builtin_exit(args);
     } else {
-        printf("Command not found: %s\n", args[0]);
+        // External command
+        execute_single_command(args, NULL, NULL, 0);
     }
 }
 
-// B.1: hop implementation
-int builtin_hop(char **args) {
-    char current_dir[MAX_PATH_SIZE];
-    if (getcwd(current_dir, sizeof(current_dir)) == NULL) {
-        perror("hop: getcwd");
-        return 1;
-    }
-
-    if (args[1] == NULL) { // hop with no arguments
-        char *old_dir = strdup(current_dir);
-        if (chdir(home_directory) == 0) {
-            free(previous_directory);
-            previous_directory = old_dir;
-        } else {
-            perror("hop");
-            free(old_dir);
-            return 1;
-        }
-        return 0;
-    }
-
-    int i = 1;
-    while (args[i] != NULL) {
-        char *target_dir = NULL;
-        if (strcmp(args[i], "~") == 0) {
-            target_dir = home_directory;
-        } else if (strcmp(args[i], ".") == 0) {
-            i++;
-            continue;
-        } else if (strcmp(args[i], "..") == 0) {
-            target_dir = "..";
-        } else if (strcmp(args[i], "-") == 0) {
-            if (previous_directory == NULL) {
-                fprintf(stderr, "hop: previous directory not set\n");
-                i++;
-                continue;
-            }
-            target_dir = previous_directory;
-        } else {
-            target_dir = args[i];
-        }
-
-        char *old_dir = strdup(current_dir);
-        if (chdir(target_dir) != 0) {
-            perror("hop");
-            free(old_dir);
-            return 1; // Stop on first error
-        }
-        
-        free(previous_directory);
-        previous_directory = old_dir;
-        
-        if (getcwd(current_dir, sizeof(current_dir)) == NULL) {
-            perror("hop: getcwd");
-            return 1;
-        }
-        i++;
-    }
-    return 0;
+void builtin_exit(char **args) {
+    (void)args; // Suppress unused parameter warning
+    save_log_to_file();
+    printf("Exiting shell...\n");
+    exit(0);
 }
 
-// Helper function to compare strings for qsort
+void builtin_hop(char **args) {
+    char new_path[MAX_PATH_SIZE];
+    char current_path[MAX_PATH_SIZE];
+    
+    // Get current directory
+    if (getcwd(current_path, sizeof(current_path)) == NULL) {
+        perror("getcwd");
+        return;
+    }
+    
+    if (!args[1]) {
+        // No argument, go to home directory
+        strncpy(new_path, home_directory, MAX_PATH_SIZE - 1);
+        new_path[MAX_PATH_SIZE - 1] = '\0';
+    } else if (strcmp(args[1], "~") == 0) {
+        // Explicit home
+        strncpy(new_path, home_directory, MAX_PATH_SIZE - 1);
+        new_path[MAX_PATH_SIZE - 1] = '\0';
+    } else if (strcmp(args[1], "-") == 0) {
+        // Previous directory
+        if (strlen(previous_directory) == 0) {
+            printf("No previous directory\n");
+            return;
+        }
+        strncpy(new_path, previous_directory, MAX_PATH_SIZE - 1);
+        new_path[MAX_PATH_SIZE - 1] = '\0';
+        printf("%s\n", new_path);
+    } else if (args[1][0] == '~' && args[1][1] == '/') {
+        // ~/path
+        int ret = snprintf(new_path, sizeof(new_path), "%s%s", home_directory, args[1] + 1);
+        if (ret >= (int)sizeof(new_path)) {
+            printf("Path too long\n");
+            return;
+        }
+    } else {
+        // Regular path
+        strncpy(new_path, args[1], MAX_PATH_SIZE - 1);
+        new_path[MAX_PATH_SIZE - 1] = '\0';
+    }
+    
+    if (chdir(new_path) == 0) {
+        strncpy(previous_directory, current_path, MAX_PATH_SIZE - 1);
+        previous_directory[MAX_PATH_SIZE - 1] = '\0';
+    } else {
+        perror("hop");
+    }
+}
+
 int compare_strings(const void *a, const void *b) {
-    return strcmp(*(const char **)a, *(const char **)b);
+    return strcmp(*(const char**)a, *(const char**)b);
 }
 
-// B.2: reveal implementation
-int builtin_reveal(char **args) {
-    int show_all = 0, long_format = 0;
-    char *target_path = ".";
-    char path_buffer[MAX_PATH_SIZE];
+int is_output_redirected_or_piped(void) {
+    return !isatty(STDOUT_FILENO);
+}
 
-    int i = 1;
-    while (args[i] != NULL) {
-        if (args[i][0] == '-') {
-            for (int j = 1; args[i][j] != '\0'; j++) {
-                if (args[i][j] == 'a') show_all = 1;
-                else if (args[i][j] == 'l') long_format = 1;
+void builtin_reveal(char **args) {
+    char *path = ".";  // Default to current directory
+    int show_hidden = 0;
+    int long_format = 0;
+    int arg_index = 1;
+    static char expanded_path[MAX_PATH_SIZE];
+    
+    // Parse flags
+    while (args[arg_index] && args[arg_index][0] == '-') {
+        char *flag = args[arg_index];
+        for (int i = 1; flag[i]; i++) {
+            if (flag[i] == 'a') {
+                show_hidden = 1;
+            } else if (flag[i] == 'l') {
+                long_format = 1;
             }
-        } else {
-            target_path = args[i];
-            break; // First non-flag is the path
         }
-        i++;
+        arg_index++;
     }
-
-    if (strcmp(target_path, "~") == 0) {
-        target_path = home_directory;
-    } else if (strcmp(target_path, "-") == 0) {
-        if (previous_directory) {
-            target_path = previous_directory;
-        } else {
-            fprintf(stderr, "reveal: previous directory not set\n");
-            return 1;
+    
+    // Get path if provided
+    if (args[arg_index]) {
+        path = args[arg_index];
+        if (path[0] == '~') {
+            if (path[1] == '\0') {
+                strncpy(expanded_path, shell_start_directory, MAX_PATH_SIZE - 1);
+                expanded_path[MAX_PATH_SIZE - 1] = '\0';
+            } else if (path[1] == '/') {
+                int ret = snprintf(expanded_path, sizeof(expanded_path), "%s%s", shell_start_directory, path + 1);
+                if (ret >= (int)sizeof(expanded_path)) {
+                    printf("No such directory!\n");
+                    return;
+                }
+            }
+            path = expanded_path;
+        } else if (strcmp(path, "-") == 0) {
+            if (strlen(previous_directory) == 0) {
+                printf("No such directory!\n");
+                return;
+            }
+            path = previous_directory;
         }
     }
-
-    DIR *dir = opendir(target_path);
-    if (dir == NULL) {
-        snprintf(path_buffer, sizeof(path_buffer), "reveal: %s", target_path);
-        perror(path_buffer);
-        return 1;
+    
+    // Check if too many arguments
+    if (args[arg_index + 1]) {
+        printf("reveal: Invalid Syntax!\n");
+        return;
     }
-
-    char **entries = NULL;
+    
+    struct stat path_stat;
+    if (stat(path, &path_stat) != 0) {
+        printf("No such directory!\n");
+        return;
+    }
+    
+    if (S_ISREG(path_stat.st_mode)) {
+        // It's a file - just print the filename
+        printf("%s\n", path);
+        return;
+    }
+    
+    if (!S_ISDIR(path_stat.st_mode)) {
+        printf("No such directory!\n");
+        return;
+    }
+    
+    // It's a directory
+    DIR *dir = opendir(path);
+    if (!dir) {
+        printf("No such directory!\n");
+        return;
+    }
+    
+    // Collect entries
+    char **entries = malloc(1000 * sizeof(char*));
+    if (!entries) {
+        closedir(dir);
+        return;
+    }
     int count = 0;
+    
     struct dirent *entry;
-    while ((entry = readdir(dir)) != NULL) {
-        if (!show_all && entry->d_name[0] == '.') continue;
-        entries = realloc(entries, (count + 1) * sizeof(char *));
-        if (!entries) {
-            perror("realloc");
-            closedir(dir);
-            return 1;
+    while ((entry = readdir(dir)) != NULL && count < 1000) {
+        if (!show_hidden && entry->d_name[0] == '.') {
+            continue;
         }
         entries[count] = strdup(entry->d_name);
-        if (!entries[count]) {
-            perror("strdup");
-            closedir(dir);
-            return 1;
+        if (entries[count]) {
+            count++;
         }
-        count++;
     }
     closedir(dir);
-
-    qsort(entries, count, sizeof(char *), compare_strings);
-
-    for (i = 0; i < count; i++) {
-        printf("%s%s", entries[i], long_format ? "\n" : (i == count - 1 ? "" : " "));
+    
+    // Sort entries lexicographically (by ASCII values)
+    qsort(entries, count, sizeof(char*), compare_strings);
+    
+    // Print entries
+    if (long_format) {
+        // Line by line format (one entry per line)
+        for (int i = 0; i < count; i++) {
+            printf("%s\n", entries[i]);
+            free(entries[i]);
+        }
+    } else {
+        // Default format - like ls (space separated, but newline when piped)
+        for (int i = 0; i < count; i++) {
+            printf("%s", entries[i]);
+            if (i < count - 1) {
+                if (is_output_redirected_or_piped()) {
+                    printf("\n");  // One per line when piped/redirected
+                } else {
+                    printf("  ");  // Space separated when to terminal
+                }
+            }
+            free(entries[i]);
+        }
+        if (!is_output_redirected_or_piped()) {
+            printf("\n");  // Final newline for terminal output
+        } else if (count > 0) {
+            printf("\n");  // Final newline for last item when piped
+        }
     }
-    if (!long_format && count > 0) printf("\n");
-
-    for (i = 0; i < count; i++) free(entries[i]);
+    
     free(entries);
-    return 0;
 }
 
-// B.3: log implementation
-int builtin_log(char **args) {
-    if (args[1] == NULL) {
-        // Display history from oldest to newest
-        for (int i = 0; i < history_count; i++) {
-            int index = (history_start + i) % 15;
-            printf("%s\n", command_history[index]);
-        }
+void builtin_log(char **args) {
+    if (!args[1]) {
+        // No arguments - print log
+        print_log();
     } else if (strcmp(args[1], "purge") == 0) {
-        // Clear history
-        for (int i = 0; i < 15; i++) {
-            free(command_history[i]);
-            command_history[i] = NULL;
+        // Purge log
+        purge_log();
+    } else if (strcmp(args[1], "execute") == 0) {
+        // Execute command at index
+        if (!args[2]) {
+            printf("Usage: log execute <index>\n");
+            return;
         }
-        history_count = 0;
-        history_start = 0;
-    } else if (strcmp(args[1], "execute") == 0 && args[2] != NULL) {
-        // Execute command at index (1-indexed, newest to oldest)
+        
         int index = atoi(args[2]);
         if (index < 1 || index > history_count) {
-            fprintf(stderr, "log: invalid index\n");
-            return 1;
+            printf("Invalid index\n");
+            return;
         }
         
-        // Convert from 1-indexed newest-to-oldest to actual array index
-        int actual_index = (history_start + history_count - index) % 15;
-        char *command_to_run = command_history[actual_index];
+        // Convert to 0-based index (newest to oldest)
+        // Index 1 = newest, so actual_index = history_count - 1
+        int actual_index = (history_start + (history_count - index)) % 15;
         
-        // Validate syntax first
-        if (!parse_shell_command(command_to_run)) {
-            printf("Invalid Syntax!\n");
-            return 1;
+        // Parse and execute the command without adding to history
+        char *command_to_execute = strdup(command_history[actual_index]);
+        printf("Executing: %s\n", command_to_execute);
+        
+        // Parse the command
+        ParsedCommand parsed;
+        if (parse_command(command_to_execute, &parsed) == 0) {
+            if (parsed.command_count == 1) {
+                execute_command_no_history(parsed.commands[0]);
+            } else if (parsed.command_count > 1) {
+                execute_pipeline(parsed.commands, parsed.command_count, 
+                               parsed.input_file, parsed.output_file, parsed.append_output);
+            }
+            free_parsed_command(&parsed);
         }
         
-        // Execute the command without adding to history
-        char **exec_args = tokenize_input(command_to_run);
-        if (exec_args && exec_args[0]) {
-            execute_command_no_history(exec_args);
-        }
-        free_tokens(exec_args);
+        free(command_to_execute);
     } else {
-        fprintf(stderr, "log: invalid arguments\n");
-        return 1;
+        printf("Usage: log [purge | execute <index>]\n");
     }
-    return 0;
 }
 
 void save_log_to_file(void) {
-    if (!home_directory) return;
-    char log_file[MAX_PATH_SIZE];
-    snprintf(log_file, sizeof(log_file), "%s/.shell_history", home_directory);
-    FILE *file = fopen(log_file, "w");
-    if (!file) return;
-    for (int i = 0; i < history_count; i++) {
-        int index = (history_start + i) % 15;
-        fprintf(file, "%s\n", command_history[index]);
+    char log_file_path[MAX_PATH_SIZE + 20]; // Extra space for "/.shell_history"
+    
+    // Check if home_directory + "/.shell_history" fits in the buffer
+    if (strlen(home_directory) + 16 >= sizeof(log_file_path)) {
+        return; // Path too long
     }
+    
+    int ret = snprintf(log_file_path, sizeof(log_file_path), "%s/.shell_history", home_directory);
+    if (ret >= (int)sizeof(log_file_path)) {
+        return; // Path was truncated
+    }
+    
+    FILE *file = fopen(log_file_path, "w");
+    if (!file) return;
+    
+    fprintf(file, "%d\n%d\n", history_count, history_start);
+    
+    for (int i = 0; i < history_count; i++) {
+        int idx = (history_start + i) % 15;
+        fprintf(file, "%s\n", command_history[idx]);
+    }
+    
     fclose(file);
 }
 
 void load_log_from_file(void) {
-    if (!home_directory) return;
-    char log_file[MAX_PATH_SIZE];
-    snprintf(log_file, sizeof(log_file), "%s/.shell_history", home_directory);
-    FILE *file = fopen(log_file, "r");
+    char log_file_path[MAX_PATH_SIZE + 20]; // Extra space for "/.shell_history"
+    
+    // Check if home_directory + "/.shell_history" fits in the buffer
+    if (strlen(home_directory) + 16 >= sizeof(log_file_path)) {
+        return; // Path too long
+    }
+    
+    int ret = snprintf(log_file_path, sizeof(log_file_path), "%s/.shell_history", home_directory);
+    if (ret >= (int)sizeof(log_file_path)) {
+        return; // Path was truncated
+    }
+    
+    FILE *file = fopen(log_file_path, "r");
     if (!file) return;
+    
+    if (fscanf(file, "%d\n%d\n", &history_count, &history_start) != 2) {
+        fclose(file);
+        return;
+    }
+    
+    if (history_count > 15) history_count = 15;
+    if (history_start >= 15) history_start = 0;
+    
     char line[MAX_INPUT_SIZE];
-    while (fgets(line, sizeof(line), file)) {
-        line[strcspn(line, "\n")] = 0;
-        if (strlen(line) > 0) {
-            add_to_history(line);
+    for (int i = 0; i < history_count; i++) {
+        if (fgets(line, sizeof(line), file)) {
+            // Remove newline
+            size_t len = strlen(line);
+            if (len > 0 && line[len-1] == '\n') {
+                line[len-1] = '\0';
+            }
+            int idx = (history_start + i) % 15;
+            strncpy(command_history[idx], line, MAX_INPUT_SIZE - 1);
+            command_history[idx][MAX_INPUT_SIZE - 1] = '\0';
         }
     }
+    
     fclose(file);
 }

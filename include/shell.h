@@ -1,44 +1,40 @@
 #ifndef SHELL_H
 #define SHELL_H
 
-#define _POSIX_C_SOURCE 200809L
-#define _XOPEN_SOURCE 700
-#define MAX_INPUT_SIZE 1024
-#define MAX_PATH_SIZE 512
-#define MAX_ARGS 64
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
-#include <sys/types.h>
-#include <sys/utsname.h>
 #include <sys/wait.h>
+#include <sys/types.h>
+#include <fcntl.h>
 #include <dirent.h>
-#include <sys/stat.h>
+#include <sys/utsname.h>
 #include <pwd.h>
-#include <errno.h>
+#include <sys/stat.h>
 
-extern char *home_directory;
-extern char *username;
-extern char *system_name;
-extern char *previous_directory;
+#define MAX_INPUT_SIZE 1024
+#define MAX_ARGS 64
+#define MAX_COMMANDS 16
+#define MAX_PATH_SIZE 1024
+#define MAX_LOG_SIZE 20
 
-// Function declarations
-int init_shell_globals(void);
-void execute_command(char **args);
-void execute_command_no_history(char **args);
-char** tokenize_input(const char* input);
-void free_tokens(char** tokens);
+// Global variables
+extern char home_directory[MAX_PATH_SIZE];
+extern char previous_directory[MAX_PATH_SIZE];
+extern char shell_start_directory[MAX_PATH_SIZE];  // Add this line
 
-// Built-in commands
-int builtin_hop(char **args);
-int builtin_reveal(char **args);
-int builtin_log(char **args);
+// Core shell functions
+void initialize_shell(void);
+void shell_loop(void);
 
-// History functions
-void add_to_history(const char *command);
-void save_log_to_file(void);
-void load_log_from_file(void);
+// Command execution
+int execute_single_command(char **args, char *input_file, char *output_file, int append_output);
+int execute_pipeline(char ***commands, int command_count, char *input_file, char *output_file, int append_output);
+int execute_builtin_with_redirection(const char *builtin_name, char **args, char *input_file, char *output_file, int append_output);
+
+// Process management
+pid_t create_process(char **args, int input_fd, int output_fd, int pipe_fds[][2], int num_pipes);
+pid_t create_builtin_process(char **args, int input_fd, int output_fd, int pipe_fds[][2], int num_pipes);
 
 #endif

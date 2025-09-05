@@ -6,7 +6,7 @@ CFLAGS	:= -std=c99 \
            -Wno-unused-parameter \
            -fno-asm -I include
 
-SRC	:= src/main.c src/prompt.c src/input.c src/parser.c src/builtins.c
+SRC	:= src/main.c src/prompt.c src/input.c src/parser.c src/builtins.c src/command.c
 OUT	:= shell.out
 
 # Default target: builds the executable.

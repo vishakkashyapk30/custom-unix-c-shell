@@ -1,227 +1,208 @@
-#include "../include/shell.h"
-#include "../include/parser.h"
+#include "parser.h"
+#include <ctype.h>
 
-void skip_whitespace(Parser *parser) {
-    while (parser->position < parser->length) {
-        char c = parser->input[parser->position];
-        if (c == ' ' || c == '\t' || c == '\n' || c == '\r') {
-            parser->position++;
-        } else {
-            break;
-        }
+void trim_whitespace(char *str) {
+    if (!str) return;
+    
+    char *start = str;
+    char *end;
+    
+    // Trim leading space
+    while (isspace((unsigned char)*start)) start++;
+    
+    // All spaces?
+    if (*start == 0) {
+        str[0] = '\0';
+        return;
+    }
+    
+    // Trim trailing space
+    end = start + strlen(start) - 1;
+    while (end > start && isspace((unsigned char)*end)) end--;
+    
+    // Write new null terminator
+    end[1] = '\0';
+    
+    // Move trimmed string to beginning if necessary
+    if (start != str) {
+        memmove(str, start, strlen(start) + 1);
     }
 }
 
-int parse_name(Parser *parser) {
-    skip_whitespace(parser);
+int is_valid_syntax(char *input) {
+    if (!input || strlen(input) == 0) return 1;
     
-    int start = parser->position;
+    char *temp = strdup(input);
+    trim_whitespace(temp);
     
-    // name -> r"[^|&><;]+"
-    while (parser->position < parser->length) {
-        char c = parser->input[parser->position];
-        if (c != '|' && c != '&' && c != '>' && c != '<' && c != ';' && 
-            c != ' ' && c != '\t' && c != '\n' && c != '\r') {
-            parser->position++;
-        } else {
-            break;
-        }
-    }
-    
-    return parser->position > start; // Return 1 if we consumed any characters.
-}
-
-int parse_input_redirect(Parser *parser) {
-    int saved_position = parser->position;
-    skip_whitespace(parser);
-    
-    if (parser->position >= parser->length || parser->input[parser->position] != '<') {
-        parser->position = saved_position;
+    // Check for invalid sequences
+    if (strstr(temp, "||") || strstr(temp, "&&") || strstr(temp, ";;") ||
+        strstr(temp, "|;") || strstr(temp, ";|") ||
+        strstr(temp, "|&") || strstr(temp, "&|")) {
+        free(temp);
         return 0;
     }
     
-    parser->position++; // consume '<'
-    
-    // An input redirect must be followed by a name.
-    if (!parse_name(parser)) {
-        parser->position = saved_position;
+    // Check for invalid starting/ending characters
+    if (temp[0] == '|' || temp[0] == '&' || temp[0] == ';') {
+        free(temp);
         return 0;
     }
     
+    size_t len = strlen(temp);
+    if (len > 0 && temp[len-1] == '|') {
+        free(temp);
+        return 0;
+    }
+    
+    free(temp);
     return 1;
 }
 
-int parse_output_redirect(Parser *parser) {
-    int saved_position = parser->position;
-    skip_whitespace(parser);
+char **tokenize_command(char *command) {
+    char **tokens = malloc(MAX_ARGS * sizeof(char*));
+    if (!tokens) return NULL;
     
-    if (parser->position >= parser->length || parser->input[parser->position] != '>') {
-        parser->position = saved_position;
-        return 0;
+    int count = 0;
+    char *command_copy = strdup(command);
+    char *token = strtok(command_copy, " \t\n\r");
+    
+    while (token != NULL && count < MAX_ARGS - 1) {
+        tokens[count] = strdup(token);
+        count++;
+        token = strtok(NULL, " \t\n\r");
     }
     
-    parser->position++; // consume first '>'
-    
-    // Check for '>>' (append).
-    if (parser->position < parser->length && parser->input[parser->position] == '>') {
-        parser->position++; // consume second '>'
-    }
-    
-    // An output redirect must be followed by a name.
-    if (!parse_name(parser)) {
-        parser->position = saved_position;
-        return 0;
-    }
-    
-    return 1;
+    tokens[count] = NULL;
+    free(command_copy);
+    return tokens;
 }
 
-int parse_atomic(Parser *parser) {
-    // atomic -> name (name | input | output)*
+int parse_command(char *input, ParsedCommand *parsed) {
+    memset(parsed, 0, sizeof(ParsedCommand));
     
-    // An atomic command must start with a name.
-    if (!parse_name(parser)) {
-        return 0;
+    char *input_copy = strdup(input);
+    trim_whitespace(input_copy);
+    
+    // Handle background execution
+    size_t len = strlen(input_copy);
+    if (len > 0 && input_copy[len-1] == '&') {
+        parsed->background = 1;
+        input_copy[len-1] = '\0';
+        trim_whitespace(input_copy);
     }
     
-    // After the first name, it can be followed by any number of
-    // other names (arguments), input redirects, or output redirects.
-    while (1) {
-        int saved_position = parser->position;
+    // Split by semicolon (for now, just take the first command group)
+    char *semicolon = strchr(input_copy, ';');
+    if (semicolon) {
+        *semicolon = '\0';
+    }
+    
+    // Parse pipes - split the entire command by |
+    char **pipe_parts = malloc(MAX_COMMANDS * sizeof(char*));
+    int pipe_count = 0;
+    
+    char *input_working = strdup(input_copy);
+    char *pipe_token = strtok(input_working, "|");
+    
+    while (pipe_token && pipe_count < MAX_COMMANDS) {
+        trim_whitespace(pipe_token);
+        pipe_parts[pipe_count] = strdup(pipe_token);
+        pipe_count++;
+        pipe_token = strtok(NULL, "|");
+    }
+    free(input_working);
+    
+    // Now process each pipe part for redirections
+    for (int i = 0; i < pipe_count; i++) {
+        char *cmd_part = pipe_parts[i];
+        char *input_redir = NULL, *output_redir = NULL;
+        int append = 0;
         
-        if (parse_input_redirect(parser) || parse_output_redirect(parser) || parse_name(parser)) {
-            continue; // Successfully parsed one more element.
-        }
+        // Parse redirections for this command
+        char *cmd_copy = strdup(cmd_part);
         
-        // If we can't parse any more valid elements, restore the position and stop.
-        parser->position = saved_position;
-        break;
-    }
-    
-    return 1;
-}
-
-int parse_cmd_group(Parser *parser) {
-    // cmd_group -> atomic (\| atomic)*
-    
-    // A command group must start with an atomic command.
-    if (!parse_atomic(parser)) {
-        return 0;
-    }
-    
-    // It can then be followed by zero or more pipes, each followed by an atomic command.
-    while (1) {
-        int saved_position = parser->position;
-        skip_whitespace(parser);
-        
-        if (parser->position < parser->length && parser->input[parser->position] == '|') {
-            // Make sure it's a single '|' and not '||'.
-            if (parser->position + 1 < parser->length && parser->input[parser->position + 1] == '|') {
-                parser->position = saved_position;
-                break; // This is '||', which is not a pipe separator.
-            }
-            
-            parser->position++; // consume '|'
-            
-            // A pipe must be followed by another valid atomic command.
-            if (!parse_atomic(parser)) {
-                return 0; // Invalid syntax: pipe not followed by a command.
-            }
-        } else {
-            // No more pipes found.
-            parser->position = saved_position;
-            break;
-        }
-    }
-    
-    return 1;
-}
-
-int parse_shell_cmd(Parser *parser) {
-    // Updated grammar: shell_cmd -> cmd_group ((; | & | &&) cmd_group)* &?
-    
-    if (!parse_cmd_group(parser)) {
-        return 0;
-    }
-    
-    while (1) {
-        int saved_position = parser->position;
-        skip_whitespace(parser);
-
-        if (parser->position < parser->length) {
-            char c = parser->input[parser->position];
-            
-            if (c == ';') {
-                parser->position++; // consume ';'
-                // ';' MUST be followed by another command group
-                if (!parse_cmd_group(parser)) {
-                    return 0;
+        // Handle input redirection (only for first command)
+        if (i == 0) {
+            char *last_input = strrchr(cmd_copy, '<');
+            if (last_input) {
+                *last_input = '\0';
+                char *filename = last_input + 1;
+                trim_whitespace(filename);
+                if (strlen(filename) > 0) {
+                    input_redir = strdup(filename);
                 }
-            } else if (c == '&') {
-                parser->position++; // consume first '&'
-                
-                if (parser->position < parser->length && parser->input[parser->position] == '&') {
-                    parser->position++; // consume second '&' for '&&'
-                    // '&&' MUST be followed by another command group
-                    if (!parse_cmd_group(parser)) {
-                        return 0;
-                    }
-                } else {
-                    // Single '&' - try to parse another command group
-                    if (!parse_cmd_group(parser)) {
-                        // No command group follows, so this '&' is trailing
-                        parser->position = saved_position;
-                        break;
-                    }
+            }
+        }
+        
+        // Handle output redirection (only for last command)
+        if (i == pipe_count - 1) {
+            // Look for >> first
+            char *append_pos = strstr(cmd_copy, ">>");
+            if (append_pos) {
+                *append_pos = '\0';
+                char *filename = append_pos + 2;
+                trim_whitespace(filename);
+                if (strlen(filename) > 0) {
+                    output_redir = strdup(filename);
+                    append = 1;
                 }
             } else {
-                // No valid separator found
-                parser->position = saved_position;
-                break;
+                // Look for single >
+                char *redirect_pos = strrchr(cmd_copy, '>');
+                if (redirect_pos) {
+                    *redirect_pos = '\0';
+                    char *filename = redirect_pos + 1;
+                    trim_whitespace(filename);
+                    if (strlen(filename) > 0) {
+                        output_redir = strdup(filename);
+                        append = 0;
+                    }
+                }
             }
-        } else {
-            // End of input
-            parser->position = saved_position;
-            break;
         }
-    }
-
-    // Optional trailing '&' for backgrounding the last command.
-    int saved_position = parser->position;
-    skip_whitespace(parser);
-    if (parser->position < parser->length && parser->input[parser->position] == '&') {
-        // Make sure it's not the start of '&&'
-        if (parser->position + 1 < parser->length && parser->input[parser->position + 1] == '&') {
-            parser->position = saved_position;
-        } else {
-            parser->position++; // Consume the trailing '&'
+        
+        trim_whitespace(cmd_copy);
+        
+        // Tokenize the command
+        parsed->commands[i] = tokenize_command(cmd_copy);
+        
+        // Store redirections
+        if (i == 0 && input_redir) {
+            parsed->input_file = input_redir;
         }
-    } else {
-        parser->position = saved_position;
+        if (i == pipe_count - 1 && output_redir) {
+            parsed->output_file = output_redir;
+            parsed->append_output = append;
+        }
+        
+        free(cmd_copy);
+        free(pipe_parts[i]);
     }
-
-    return 1;
+    
+    parsed->command_count = pipe_count;
+    free(pipe_parts);
+    free(input_copy);
+    
+    return 0;
 }
 
-int parse_shell_command(const char *input) {
-    if (input == NULL || strlen(input) == 0) {
-        return 1; // Empty input is considered valid.
+void free_parsed_command(ParsedCommand *parsed) {
+    for (int i = 0; i < parsed->command_count; i++) {
+        if (parsed->commands[i]) {
+            for (int j = 0; parsed->commands[i][j]; j++) {
+                free(parsed->commands[i][j]);
+            }
+            free(parsed->commands[i]);
+        }
     }
     
-    Parser parser;
-    parser.input = (char *)input;
-    parser.position = 0;
-    parser.length = strlen(input);
-    
-    if (!parse_shell_cmd(&parser)) {
-        return 0;
-    }
-    
-    // Check that we've consumed the entire input
-    skip_whitespace(&parser);
-    if (parser.position < parser.length) {
-        return 0; // Invalid syntax: trailing characters found.
-    }
-    
-    return 1;
+    free(parsed->input_file);
+    free(parsed->output_file);
+    memset(parsed, 0, sizeof(ParsedCommand));
+}
+
+int parse_shell_command(const char *command) {
+    if (!command) return 0;
+    return is_valid_syntax((char*)command);
 }
