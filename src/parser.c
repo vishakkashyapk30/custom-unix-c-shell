@@ -55,6 +55,55 @@ int is_valid_syntax(char *input) {
         return 0;
     }
     
+    // More comprehensive CFG validation
+    // Check that | is followed by valid tokens (not ; or &)
+    for (size_t i = 0; i < len - 1; i++) {
+        if (temp[i] == '|') {
+            // Skip whitespace after |
+            size_t j = i + 1;
+            while (j < len && (temp[j] == ' ' || temp[j] == '\t' || temp[j] == '\n' || temp[j] == '\r')) {
+                j++;
+            }
+            // After | and whitespace, next char must not be ; or &
+            if (j < len && (temp[j] == ';' || temp[j] == '&')) {
+                free(temp);
+                return 0;
+            }
+        }
+    }
+    
+    // Check that ; is followed by valid tokens (not | or &)
+    for (size_t i = 0; i < len - 1; i++) {
+        if (temp[i] == ';') {
+            // Skip whitespace after ;
+            size_t j = i + 1;
+            while (j < len && (temp[j] == ' ' || temp[j] == '\t' || temp[j] == '\n' || temp[j] == '\r')) {
+                j++;
+            }
+            // After ; and whitespace, next char must not be | or &
+            if (j < len && (temp[j] == '|' || temp[j] == '&')) {
+                free(temp);
+                return 0;
+            }
+        }
+    }
+    
+    // Check that & is only at the end or followed by whitespace and end
+    for (size_t i = 0; i < len - 1; i++) {
+        if (temp[i] == '&') {
+            // Skip whitespace after &
+            size_t j = i + 1;
+            while (j < len && (temp[j] == ' ' || temp[j] == '\t' || temp[j] == '\n' || temp[j] == '\r')) {
+                j++;
+            }
+            // After & and whitespace, must be at end of string
+            if (j < len) {
+                free(temp);
+                return 0;
+            }
+        }
+    }
+    
     free(temp);
     return 1;
 }
@@ -119,50 +168,70 @@ int parse_command(char *input, ParsedCommand *parsed) {
         char *input_redir = NULL, *output_redir = NULL;
         int append = 0;
         
-        // Parse redirections for this command
+        // Parse redirections for this command using tokenization approach
         char *cmd_copy = strdup(cmd_part);
+        char **tokens = malloc(MAX_ARGS * sizeof(char*));
+        int token_count = 0;
         
-        // Handle input redirection (only for first command)
-        if (i == 0) {
-            char *last_input = strrchr(cmd_copy, '<');
-            if (last_input) {
-                *last_input = '\0';
-                char *filename = last_input + 1;
-                trim_whitespace(filename);
-                if (strlen(filename) > 0) {
-                    input_redir = strdup(filename);
-                }
-            }
+        // Tokenize the command
+        char *token = strtok(cmd_copy, " \t\n\r");
+        while (token != NULL && token_count < MAX_ARGS - 1) {
+            tokens[token_count] = strdup(token);
+            token_count++;
+            token = strtok(NULL, " \t\n\r");
         }
+        tokens[token_count] = NULL;
         
-        // Handle output redirection (only for last command)
-        if (i == pipe_count - 1) {
-            // Look for >> first
-            char *append_pos = strstr(cmd_copy, ">>");
-            if (append_pos) {
-                *append_pos = '\0';
-                char *filename = append_pos + 2;
-                trim_whitespace(filename);
-                if (strlen(filename) > 0) {
-                    output_redir = strdup(filename);
+        // Parse redirections from tokens
+        char **clean_tokens = malloc(MAX_ARGS * sizeof(char*));
+        int clean_count = 0;
+        
+        for (int j = 0; j < token_count; j++) {
+            if (strcmp(tokens[j], "<") == 0) {
+                // Input redirection (only for first command)
+                if (i == 0 && j + 1 < token_count) {
+                    input_redir = strdup(tokens[j + 1]);
+                    j++; // Skip the filename token
+                }
+            } else if (strcmp(tokens[j], ">") == 0) {
+                // Output redirection (only for last command)
+                if (i == pipe_count - 1 && j + 1 < token_count) {
+                    output_redir = strdup(tokens[j + 1]);
+                    append = 0;
+                    j++; // Skip the filename token
+                }
+            } else if (strcmp(tokens[j], ">>") == 0) {
+                // Append redirection (only for last command)
+                if (i == pipe_count - 1 && j + 1 < token_count) {
+                    output_redir = strdup(tokens[j + 1]);
                     append = 1;
+                    j++; // Skip the filename token
                 }
             } else {
-                // Look for single >
-                char *redirect_pos = strrchr(cmd_copy, '>');
-                if (redirect_pos) {
-                    *redirect_pos = '\0';
-                    char *filename = redirect_pos + 1;
-                    trim_whitespace(filename);
-                    if (strlen(filename) > 0) {
-                        output_redir = strdup(filename);
-                        append = 0;
-                    }
-                }
+                // Regular argument
+                clean_tokens[clean_count] = strdup(tokens[j]);
+                clean_count++;
             }
         }
+        clean_tokens[clean_count] = NULL;
         
-        trim_whitespace(cmd_copy);
+        // Free token array
+        for (int j = 0; j < token_count; j++) {
+            free(tokens[j]);
+        }
+        free(tokens);
+        
+        // Reconstruct clean command
+        free(cmd_copy);
+        cmd_copy = malloc(MAX_INPUT_SIZE);
+        cmd_copy[0] = '\0';
+        
+        for (int j = 0; j < clean_count; j++) {
+            if (j > 0) strcat(cmd_copy, " ");
+            strcat(cmd_copy, clean_tokens[j]);
+            free(clean_tokens[j]);
+        }
+        free(clean_tokens);
         
         // Tokenize the command
         parsed->commands[i] = tokenize_command(cmd_copy);

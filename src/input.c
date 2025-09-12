@@ -81,8 +81,8 @@ void handle_input(char *input) {
             add_to_log(input);
             int result = execute_single_command(parsed.commands[0], parsed.input_file, 
                                               parsed.output_file, parsed.append_output);
-            if (result == -2) {
-                printf("Command not found\n");
+            if (result == 127) {
+                printf("Invalid Command (Valid Syntax)\n");
             }
         }
     } else if (parsed.command_count > 1) {
@@ -90,8 +90,8 @@ void handle_input(char *input) {
         add_to_log(input);
         int result = execute_pipeline(parsed.commands, parsed.command_count, 
                                     parsed.input_file, parsed.output_file, parsed.append_output);
-        if (result == -2) {
-            printf("Command not found\n");
+        if (result == 127) {
+            printf("Invalid Command (Valid Syntax)\n");
         }
     }
     

@@ -146,8 +146,8 @@ void builtin_reveal(char **args) {
     int arg_index = 1;
     static char expanded_path[MAX_PATH_SIZE];
     
-    // Parse flags
-    while (args[arg_index] && args[arg_index][0] == '-') {
+    // Parse flags (treat a lone "-" as a path, not flags)
+    while (args[arg_index] && args[arg_index][0] == '-' && args[arg_index][1] != '\0') {
         char *flag = args[arg_index];
         for (int i = 1; flag[i]; i++) {
             if (flag[i] == 'a') {
@@ -164,10 +164,12 @@ void builtin_reveal(char **args) {
         path = args[arg_index];
         if (path[0] == '~') {
             if (path[1] == '\0') {
-                strncpy(expanded_path, shell_start_directory, MAX_PATH_SIZE - 1);
+                // "~" → home_directory (same as hop)
+                strncpy(expanded_path, home_directory, MAX_PATH_SIZE - 1);
                 expanded_path[MAX_PATH_SIZE - 1] = '\0';
             } else if (path[1] == '/') {
-                int ret = snprintf(expanded_path, sizeof(expanded_path), "%s%s", shell_start_directory, path + 1);
+                // "~/..." → home_directory + "/..."
+                int ret = snprintf(expanded_path, sizeof(expanded_path), "%s%s", home_directory, path + 1);
                 if (ret >= (int)sizeof(expanded_path)) {
                     printf("No such directory!\n");
                     return;
@@ -175,16 +177,18 @@ void builtin_reveal(char **args) {
             }
             path = expanded_path;
         } else if (strcmp(path, "-") == 0) {
+            // "-" → previous_directory, only valid after a hop
             if (strlen(previous_directory) == 0) {
                 printf("No such directory!\n");
                 return;
             }
             path = previous_directory;
         }
+        arg_index++;
     }
     
     // Check if too many arguments
-    if (args[arg_index + 1]) {
+    if (args[arg_index]) {
         printf("reveal: Invalid Syntax!\n");
         return;
     }

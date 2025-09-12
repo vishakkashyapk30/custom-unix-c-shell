@@ -24,8 +24,8 @@ pid_t create_process(char **args, int input_fd, int output_fd, int pipe_fds[][2]
         }
         
         execvp(args[0], args);
-        perror("execvp failed");
-        exit(EXIT_FAILURE);
+        // If execvp returns, the command could not be executed
+        _exit(127);
     }
     
     return pid;
@@ -77,7 +77,7 @@ int execute_builtin_with_redirection(const char *builtin_name, char **args, char
     if (input_file) {
         input_fd = open(input_file, O_RDONLY);
         if (input_fd == -1) {
-            perror("open input file");
+            printf("No such file or directory\n");
             return -1;
         }
         saved_stdin = dup(STDIN_FILENO);
@@ -89,7 +89,7 @@ int execute_builtin_with_redirection(const char *builtin_name, char **args, char
         flags |= append_output ? O_APPEND : O_TRUNC;
         output_fd = open(output_file, flags, 0644);
         if (output_fd == -1) {
-            perror("open output file");
+            printf("Unable to create file for writing\n");
             if (input_fd != STDIN_FILENO) {
                 close(input_fd);
                 if (saved_stdin != -1) {
@@ -140,7 +140,7 @@ int execute_single_command(char **args, char *input_file, char *output_file, int
     if (input_file) {
         input_fd = open(input_file, O_RDONLY);
         if (input_fd == -1) {
-            perror("open input file");
+            printf("No such file or directory\n");
             return -1;
         }
     }
@@ -150,7 +150,7 @@ int execute_single_command(char **args, char *input_file, char *output_file, int
         flags |= append_output ? O_APPEND : O_TRUNC;
         output_fd = open(output_file, flags, 0644);
         if (output_fd == -1) {
-            perror("open output file");
+            printf("Unable to create file for writing\n");
             if (input_fd != STDIN_FILENO) close(input_fd);
             return -1;
         }
@@ -179,7 +179,7 @@ int execute_pipeline(char ***commands, int command_count, char *input_file, char
     if (input_file) {
         first_input = open(input_file, O_RDONLY);
         if (first_input == -1) {
-            perror("open input file");
+            printf("No such file or directory\n");
             return -1;
         }
     }
@@ -191,7 +191,7 @@ int execute_pipeline(char ***commands, int command_count, char *input_file, char
         flags |= append_output ? O_APPEND : O_TRUNC;
         last_output = open(output_file, flags, 0644);
         if (last_output == -1) {
-            perror("open output file");
+            printf("Unable to create file for writing\n");
             if (first_input != STDIN_FILENO) close(first_input);
             return -1;
         }
