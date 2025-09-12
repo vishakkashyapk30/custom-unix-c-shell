@@ -55,8 +55,13 @@ void handle_input(char *input) {
         return;
     }
     
-    if (parse_command(input, &parsed) != 0) {
-        printf("Invalid Syntax!\n");
+    int parse_result = parse_command(input, &parsed);
+    if (parse_result != 0) {
+        if (parse_result == -2) {
+            printf("No such file or directory\n");
+        } else {
+            printf("Invalid Syntax!\n");
+        }
         return;
     }
     

@@ -91,51 +91,98 @@ void builtin_exit(char **args) {
 }
 
 void builtin_hop(char **args) {
-    char new_path[MAX_PATH_SIZE];
-    char current_path[MAX_PATH_SIZE];
-    
-    // Get current directory
-    if (getcwd(current_path, sizeof(current_path)) == NULL) {
-        perror("getcwd");
-        return;
-    }
-    
     if (!args[1]) {
         // No argument, go to home directory
-        strncpy(new_path, home_directory, MAX_PATH_SIZE - 1);
-        new_path[MAX_PATH_SIZE - 1] = '\0';
+        if (chdir(home_directory) == 0) {
+            strncpy(previous_directory, current_display_directory, MAX_PATH_SIZE - 1);
+            previous_directory[MAX_PATH_SIZE - 1] = '\0';
+            strcpy(current_display_directory, "~");
+        } else {
+            printf("No such directory!\n");
+        }
     } else if (strcmp(args[1], "~") == 0) {
         // Explicit home
-        strncpy(new_path, home_directory, MAX_PATH_SIZE - 1);
-        new_path[MAX_PATH_SIZE - 1] = '\0';
+        if (chdir(home_directory) == 0) {
+            strncpy(previous_directory, current_display_directory, MAX_PATH_SIZE - 1);
+            previous_directory[MAX_PATH_SIZE - 1] = '\0';
+            strcpy(current_display_directory, "~");
+        } else {
+            printf("No such directory!\n");
+        }
     } else if (strcmp(args[1], "-") == 0) {
         // Previous directory
         if (strlen(previous_directory) == 0) {
             printf("No previous directory\n");
             return;
         }
-        strncpy(new_path, previous_directory, MAX_PATH_SIZE - 1);
-        new_path[MAX_PATH_SIZE - 1] = '\0';
-        printf("%s\n", new_path);
+        
+        // Convert display path to actual path if needed
+        char actual_prev_path[MAX_PATH_SIZE];
+        if (strncmp(previous_directory, "~", 1) == 0) {
+            if (strcmp(previous_directory, "~") == 0) {
+                strcpy(actual_prev_path, shell_start_directory);  // Use shell start directory, not home
+            } else if (strncmp(previous_directory, "~/", 2) == 0) {
+                snprintf(actual_prev_path, sizeof(actual_prev_path), "%s%s", 
+                        shell_start_directory, previous_directory + 1);
+            } else {
+                strcpy(actual_prev_path, previous_directory);
+            }
+        } else {
+            strcpy(actual_prev_path, previous_directory);
+        }
+        
+        if (chdir(actual_prev_path) == 0) {
+            char temp_display[MAX_PATH_SIZE];
+            strcpy(temp_display, current_display_directory);
+            strcpy(current_display_directory, previous_directory);
+            strcpy(previous_directory, temp_display);
+        } else {
+            printf("No such directory!\n");
+        }
     } else if (args[1][0] == '~' && args[1][1] == '/') {
-        // ~/path
-        int ret = snprintf(new_path, sizeof(new_path), "%s%s", home_directory, args[1] + 1);
+        // ~/path - relative to shell start directory
+        char new_path[MAX_PATH_SIZE];
+        int ret = snprintf(new_path, sizeof(new_path), "%s%s", shell_start_directory, args[1] + 1);
         if (ret >= (int)sizeof(new_path)) {
             printf("Path too long\n");
             return;
         }
+        
+        if (chdir(new_path) == 0) {
+            strncpy(previous_directory, current_display_directory, MAX_PATH_SIZE - 1);
+            previous_directory[MAX_PATH_SIZE - 1] = '\0';
+            strcpy(current_display_directory, args[1]);
+        } else {
+            printf("No such directory!\n");
+        }
     } else {
-        // Regular path
-        strncpy(new_path, args[1], MAX_PATH_SIZE - 1);
-        new_path[MAX_PATH_SIZE - 1] = '\0';
+        // Regular path (relative or absolute)
+        if (chdir(args[1]) == 0) {
+            strncpy(previous_directory, current_display_directory, MAX_PATH_SIZE - 1);
+            previous_directory[MAX_PATH_SIZE - 1] = '\0';
+            
+            // Update display directory
+            char new_actual_path[MAX_PATH_SIZE];
+            if (getcwd(new_actual_path, sizeof(new_actual_path)) != NULL) {
+                // Check if new path is under shell start directory
+                if (strncmp(new_actual_path, shell_start_directory, strlen(shell_start_directory)) == 0) {
+                    if (strcmp(new_actual_path, shell_start_directory) == 0) {
+                        strcpy(current_display_directory, "~");
+                    } else {
+                        snprintf(current_display_directory, sizeof(current_display_directory), 
+                                "~%s", new_actual_path + strlen(shell_start_directory));
+                    }
+                } else {
+                    strcpy(current_display_directory, new_actual_path);
+                }
+            }
+        } else {
+            printf("No such directory!\n");
+        }
     }
     
-    if (chdir(new_path) == 0) {
-        strncpy(previous_directory, current_path, MAX_PATH_SIZE - 1);
-        previous_directory[MAX_PATH_SIZE - 1] = '\0';
-    } else {
-        printf("No such directory!\n");
-    }
+    fflush(stdout);
+    fflush(stderr);
 }
 
 int compare_strings(const void *a, const void *b) {
@@ -146,57 +193,11 @@ int is_output_redirected_or_piped(void) {
     return !isatty(STDOUT_FILENO);
 }
 
-void builtin_reveal(char **args) {
-    char *path = ".";  // Default to current directory
-    int show_hidden = 0;
-    int long_format = 0;
-    int arg_index = 1;
-    static char expanded_path[MAX_PATH_SIZE];
-    
-    // Parse flags (treat a lone "-" as a path, not flags)
-    while (args[arg_index] && args[arg_index][0] == '-' && args[arg_index][1] != '\0') {
-        char *flag = args[arg_index];
-        for (int i = 1; flag[i]; i++) {
-            if (flag[i] == 'a') {
-                show_hidden = 1;
-            } else if (flag[i] == 'l') {
-                long_format = 1;
-            }
-        }
-        arg_index++;
-    }
-    
-    // Get path if provided
-    if (args[arg_index]) {
-        path = args[arg_index];
-        if (path[0] == '~') {
-            if (path[1] == '\0') {
-                // "~" → home_directory (same as hop)
-                strncpy(expanded_path, home_directory, MAX_PATH_SIZE - 1);
-                expanded_path[MAX_PATH_SIZE - 1] = '\0';
-            } else if (path[1] == '/') {
-                // "~/..." → home_directory + "/..."
-                int ret = snprintf(expanded_path, sizeof(expanded_path), "%s%s", home_directory, path + 1);
-                if (ret >= (int)sizeof(expanded_path)) {
-                    printf("No such directory!\n");
-                    return;
-                }
-            }
-            path = expanded_path;
-        } else if (strcmp(path, "-") == 0) {
-            // "-" → previous_directory, only valid after a hop
-            if (strlen(previous_directory) == 0) {
-                printf("No such directory!\n");
-                return;
-            }
-            path = previous_directory;
-        }
-        arg_index++;
-    }
-    
-    // Check if too many arguments
-    if (args[arg_index]) {
-        printf("reveal: Invalid Syntax!\n");
+// Helper function to reveal a single directory
+void reveal_directory(const char *path, int show_hidden, int long_format) {
+    // Handle empty path (when previous_directory is empty)
+    if (!path || strlen(path) == 0) {
+        printf("No such directory!\n");
         return;
     }
     
@@ -275,6 +276,77 @@ void builtin_reveal(char **args) {
     }
     
     free(entries);
+}
+
+void builtin_reveal(char **args) {
+    char *path = ".";  // Default to current directory
+    int show_hidden = 0;
+    int long_format = 0;
+    int arg_index = 1;
+    static char expanded_path[MAX_PATH_SIZE];
+    
+    // Parse flags (treat a lone "-" as a path, not flags)
+    while (args[arg_index] && args[arg_index][0] == '-' && args[arg_index][1] != '\0') {
+        char *flag = args[arg_index];
+        for (int i = 1; flag[i]; i++) {
+            if (flag[i] == 'a') {
+                show_hidden = 1;
+            } else if (flag[i] == 'l') {
+                long_format = 1;
+            }
+        }
+        arg_index++;
+    }
+    
+    // Get path if provided
+    if (args[arg_index]) {
+        path = args[arg_index];
+        if (path[0] == '~') {
+            if (path[1] == '\0') {
+                // "~" → home_directory
+                strncpy(expanded_path, home_directory, MAX_PATH_SIZE - 1);
+                expanded_path[MAX_PATH_SIZE - 1] = '\0';
+            } else if (path[1] == '/') {
+                // "~/..." → home_directory + "/..."
+                int ret = snprintf(expanded_path, sizeof(expanded_path), "%s%s", home_directory, path + 1);
+                if (ret >= (int)sizeof(expanded_path)) {
+                    printf("No such directory!\n");
+                    return;
+                }
+            }
+            path = expanded_path;
+        } else if (strcmp(path, "-") == 0) {
+            // "-" → previous_directory, with proper path expansion
+            if (strlen(previous_directory) == 0) {
+                printf("No such directory!\n");
+                return;
+            }
+            
+            // Convert display path to actual path (same logic as hop -)
+            if (strncmp(previous_directory, "~", 1) == 0) {
+                if (strcmp(previous_directory, "~") == 0) {
+                    strcpy(expanded_path, shell_start_directory);
+                } else if (strncmp(previous_directory, "~/", 2) == 0) {
+                    snprintf(expanded_path, sizeof(expanded_path), "%s%s", 
+                            shell_start_directory, previous_directory + 1);
+                } else {
+                    strcpy(expanded_path, previous_directory);
+                }
+            } else {
+                strcpy(expanded_path, previous_directory);
+            }
+            path = expanded_path;
+        }
+        arg_index++;
+    }
+    
+    // Check if too many arguments
+    if (args[arg_index]) {
+        printf("reveal: Invalid Syntax!\n");
+        return;
+    }
+    
+    reveal_directory(path, show_hidden, long_format);
 }
 
 void builtin_log(char **args) {

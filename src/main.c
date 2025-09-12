@@ -9,7 +9,8 @@
 // Global variables
 char home_directory[MAX_PATH_SIZE];
 char previous_directory[MAX_PATH_SIZE];
-char shell_start_directory[MAX_PATH_SIZE];  // Add this line
+char shell_start_directory[MAX_PATH_SIZE];
+char current_display_directory[MAX_PATH_SIZE];  // Add display directory tracking
 
 void initialize_shell(void) {
     // Get actual home directory
@@ -27,6 +28,9 @@ void initialize_shell(void) {
     
     // Initialize previous directory as empty
     strcpy(previous_directory, "");
+    
+    // Initialize display directory as ~
+    strcpy(current_display_directory, "~");
     
     // Initialize shell info for prompt
     initialize_shell_info();

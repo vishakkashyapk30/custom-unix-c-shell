@@ -23,7 +23,8 @@
 // Global variables
 extern char home_directory[MAX_PATH_SIZE];
 extern char previous_directory[MAX_PATH_SIZE];
-extern char shell_start_directory[MAX_PATH_SIZE];  // Add this line
+extern char shell_start_directory[MAX_PATH_SIZE];
+extern char current_display_directory[MAX_PATH_SIZE];  // Add display directory tracking
 
 // Core shell functions
 void initialize_shell(void);

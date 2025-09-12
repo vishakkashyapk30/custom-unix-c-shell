@@ -205,7 +205,27 @@ int parse_command(char *input, ParsedCommand *parsed) {
             if (strcmp(tokens[j], "<") == 0) {
                 // Input redirection (only for first command)
                 if (i == 0 && j + 1 < token_count) {
-                    // Free previous input_redir if it exists (multiple input redirects)
+                    // For multiple input redirects, check each file in order
+                    // and fail on the first error
+                    int fd = open(tokens[j + 1], O_RDONLY);
+                    if (fd == -1) {
+                        // File doesn't exist or can't be opened - return special error code
+                        // Clean up allocated memory first
+                        for (int k = 0; k < token_count; k++) {
+                            free(tokens[k]);
+                        }
+                        free(tokens);
+                        for (int k = 0; k < clean_count; k++) {
+                            free(clean_tokens[k]);
+                        }
+                        free(clean_tokens);
+                        if (input_redir) free(input_redir);
+                        if (output_redir) free(output_redir);
+                        return -2; // Special error code for file not found
+                    }
+                    close(fd);
+                    
+                    // Free previous input_redir if it exists (use last valid one)
                     if (input_redir) {
                         free(input_redir);
                     }

@@ -83,11 +83,18 @@ int execute_builtin_with_redirection(const char *builtin_name, char **args, char
     if (input_file) {
         input_fd = open(input_file, O_RDONLY);
         if (input_fd == -1) {
-            printf("No such file or directory\n");
+            perror(input_file);
             return -1;
         }
         saved_stdin = dup(STDIN_FILENO);
-        dup2(input_fd, STDIN_FILENO);
+        if (dup2(input_fd, STDIN_FILENO) == -1) {
+            perror("dup2");
+            close(input_fd);
+            if (saved_stdin != -1) {
+                close(saved_stdin);
+            }
+            return -1;
+        }
     }
     
     if (output_file) {
@@ -115,6 +122,11 @@ int execute_builtin_with_redirection(const char *builtin_name, char **args, char
         builtin_log(args);
     } else if (strcmp(builtin_name, "hop") == 0) {
         builtin_hop(args);
+    }
+    
+    // Ensure output is flushed before restoring file descriptors
+    if (saved_stdout != -1) {
+        fflush(stdout);
     }
     
     if (saved_stdout != -1) {
@@ -146,7 +158,7 @@ int execute_single_command(char **args, char *input_file, char *output_file, int
     if (input_file) {
         input_fd = open(input_file, O_RDONLY);
         if (input_fd == -1) {
-            printf("No such file or directory\n");
+            perror(input_file);
             return -1;
         }
     }

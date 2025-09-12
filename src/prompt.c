@@ -49,7 +49,6 @@ char *get_current_path_display(void) {
 }
 
 void display_prompt(void) {
-    char *path = get_current_path_display();
-    printf("<%s@%s:%s> ", username, system_name, path);
+    printf("<%s@%s:%s> ", username, system_name, current_display_directory);
     fflush(stdout);
 }
