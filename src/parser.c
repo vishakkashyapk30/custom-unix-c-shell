@@ -207,7 +207,8 @@ int parse_command(char *input, ParsedCommand *parsed) {
                 if (i == 0 && j + 1 < token_count) {
                     // For multiple input redirects, check each file in order
                     // and fail on the first error
-                    int fd = open(tokens[j + 1], O_RDONLY);
+                    char* temp = strdup(tokens[j + 1]);
+                    int fd = open(temp, O_RDONLY);
                     if (fd == -1) {
                         // File doesn't exist or can't be opened - return special error code
                         // Clean up allocated memory first
@@ -221,6 +222,7 @@ int parse_command(char *input, ParsedCommand *parsed) {
                         free(clean_tokens);
                         if (input_redir) free(input_redir);
                         if (output_redir) free(output_redir);
+                        free(temp);
                         return -2; // Special error code for file not found
                     }
                     close(fd);
@@ -229,7 +231,7 @@ int parse_command(char *input, ParsedCommand *parsed) {
                     if (input_redir) {
                         free(input_redir);
                     }
-                    input_redir = strdup(tokens[j + 1]);
+                    input_redir = temp;
                     j++; // Skip the filename token
                 }
             } else if (strcmp(tokens[j], ">") == 0) {
@@ -239,16 +241,19 @@ int parse_command(char *input, ParsedCommand *parsed) {
                     if (output_redir) {
                         free(output_redir);
                     }
-                    char* temp=strdup(tokens[j + 1]);
-                    int fd=open( temp, O_WRONLY | O_CREAT | O_TRUNC, 0644);
-                    if(out_fail==0)
+                    char* temp = strdup(tokens[j + 1]);
+                    int fd = open(temp, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+                    if (out_fail == 0) {
                         output_redir = temp;
-                    if(fd==-1){
-                        out_fail=1;
+                        append = 0;
+                    } else {
+                        free(temp);
                     }
-                    close(fd);
-                    output_redir = strdup(tokens[j + 1]);
-                    append = 0;
+                    if (fd == -1) {
+                        out_fail = 1;
+                    } else {
+                        close(fd);
+                    }
                     j++; // Skip the filename token
                 }
             } else if (strcmp(tokens[j], ">>") == 0) {
@@ -258,11 +263,23 @@ int parse_command(char *input, ParsedCommand *parsed) {
                     if (output_redir) {
                         free(output_redir);
                     }
-                    output_redir = strdup(tokens[j + 1]);
-                    append = 1;
+                    char* temp = strdup(tokens[j + 1]);
+                    int fd = open(temp, O_WRONLY | O_CREAT | O_APPEND, 0644);
+                    if (out_fail == 0) {
+                        output_redir = temp;
+                        append = 1;
+                    } else {
+                        free(temp);
+                    }
+                    if (fd == -1) {
+                        out_fail = 1;
+                    } else {
+                        close(fd);
+                    }
                     j++; // Skip the filename token
                 }
-            } else {
+            }
+            else {
                 // Regular argument
                 clean_tokens[clean_count] = strdup(tokens[j]);
                 clean_count++;
