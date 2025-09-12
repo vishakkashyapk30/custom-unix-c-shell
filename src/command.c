@@ -174,56 +174,100 @@ int execute_pipeline(char ***commands, int command_count, char *input_file, char
     int pipe_fds[command_count - 1][2];
     pid_t pids[command_count];
     
-    // Handle input redirection for first command
-    int first_input = STDIN_FILENO;
-    if (input_file) {
-        first_input = open(input_file, O_RDONLY);
-        if (first_input == -1) {
-            printf("No such file or directory\n");
-            return -1;
-        }
-    }
-    
-    // Handle output redirection for last command
-    int last_output = STDOUT_FILENO;
-    if (output_file) {
-        int flags = O_WRONLY | O_CREAT;
-        flags |= append_output ? O_APPEND : O_TRUNC;
-        last_output = open(output_file, flags, 0644);
-        if (last_output == -1) {
-            printf("Unable to create file for writing\n");
-            if (first_input != STDIN_FILENO) close(first_input);
-            return -1;
-        }
-    }
-    
     // Create all pipes
     for (int i = 0; i < command_count - 1; i++) {
         if (pipe(pipe_fds[i]) == -1) {
             perror("pipe");
-            if (first_input != STDIN_FILENO) close(first_input);
-            if (last_output != STDOUT_FILENO) close(last_output);
             return -1;
         }
     }
     
     // Execute each command in the pipeline
     for (int i = 0; i < command_count; i++) {
-        int input_fd = (i == 0) ? first_input : pipe_fds[i-1][0];
-        int output_fd = (i == command_count - 1) ? last_output : pipe_fds[i][1];
-        
-        if (is_builtin_command(commands[i][0])) {
-            // Handle builtin in pipeline
-            pids[i] = create_builtin_process(commands[i], input_fd, output_fd, pipe_fds, command_count - 1);
+        pid_t pid = fork();
+        if (pid == 0) {
+            // Child process
+            
+            // Set up pipe connections
+            if (i > 0) {
+                // Not the first command - read from previous pipe
+                if (dup2(pipe_fds[i-1][0], STDIN_FILENO) == -1) {
+                    perror("dup2");
+                    exit(EXIT_FAILURE);
+                }
+            }
+            if (i < command_count - 1) {
+                // Not the last command - write to next pipe
+                if (dup2(pipe_fds[i][1], STDOUT_FILENO) == -1) {
+                    perror("dup2");
+                    exit(EXIT_FAILURE);
+                }
+            }
+            
+            // Close all pipe file descriptors in child
+            for (int j = 0; j < command_count - 1; j++) {
+                close(pipe_fds[j][0]);
+                close(pipe_fds[j][1]);
+            }
+            
+            // Handle file redirections for this specific command
+            int input_fd = STDIN_FILENO;
+            int output_fd = STDOUT_FILENO;
+            
+            // Check for input redirection in this command
+            if (i == 0 && input_file) {
+                input_fd = open(input_file, O_RDONLY);
+                if (input_fd == -1) {
+                    printf("No such file or directory\n");
+                    exit(EXIT_FAILURE);
+                }
+                if (dup2(input_fd, STDIN_FILENO) == -1) {
+                    perror("dup2");
+                    exit(EXIT_FAILURE);
+                }
+                close(input_fd);
+            }
+            
+            // Check for output redirection in this command
+            if (i == command_count - 1 && output_file) {
+                int flags = O_WRONLY | O_CREAT;
+                flags |= append_output ? O_APPEND : O_TRUNC;
+                output_fd = open(output_file, flags, 0644);
+                if (output_fd == -1) {
+                    printf("Unable to create file for writing\n");
+                    exit(EXIT_FAILURE);
+                }
+                if (dup2(output_fd, STDOUT_FILENO) == -1) {
+                    perror("dup2");
+                    exit(EXIT_FAILURE);
+                }
+                close(output_fd);
+            }
+            
+            // Execute the command
+            if (is_builtin_command(commands[i][0])) {
+                if (strcmp(commands[i][0], "reveal") == 0) {
+                    builtin_reveal(commands[i]);
+                } else if (strcmp(commands[i][0], "log") == 0) {
+                    builtin_log(commands[i]);
+                } else if (strcmp(commands[i][0], "hop") == 0) {
+                    builtin_hop(commands[i]);
+                }
+                exit(0);
+            } else {
+                execvp(commands[i][0], commands[i]);
+                // If execvp returns, the command could not be executed
+                _exit(127);
+            }
+        } else if (pid < 0) {
+            perror("fork");
+            return -1;
         } else {
-            // Handle external command
-            pids[i] = create_process(commands[i], input_fd, output_fd, pipe_fds, command_count - 1);
+            pids[i] = pid;
         }
     }
     
     // Close all pipe file descriptors in parent
-    if (first_input != STDIN_FILENO) close(first_input);
-    if (last_output != STDOUT_FILENO) close(last_output);
     for (int i = 0; i < command_count - 1; i++) {
         close(pipe_fds[i][0]);
         close(pipe_fds[i][1]);
@@ -234,8 +278,15 @@ int execute_pipeline(char ***commands, int command_count, char *input_file, char
     for (int i = 0; i < command_count; i++) {
         int status;
         waitpid(pids[i], &status, 0);
+        int exit_status = WEXITSTATUS(status);
+        
+        // Check if any command failed with exit status 127 (command not found)
+        if (exit_status == 127) {
+            printf("Invalid Command (Valid Syntax)\n");
+        }
+        
         if (i == command_count - 1) {
-            last_status = WEXITSTATUS(status);
+            last_status = exit_status;
         }
     }
     
