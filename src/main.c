@@ -2,6 +2,9 @@
 #include "prompt.h"
 #include "input.h"
 #include "builtins.h"
+#include "signal_handlers.h"
+#include "fg_bg.h"
+#include "parser.h"
 
 // Global variables
 char home_directory[MAX_PATH_SIZE];
@@ -30,6 +33,12 @@ void initialize_shell(void) {
     
     // Initialize log system
     initialize_log();
+    
+    // Initialize job control system
+    init_job_control_system();
+    
+    // Setup signal handlers
+    setup_signal_handlers();
 }
 
 void shell_loop(void) {
@@ -40,11 +49,12 @@ void shell_loop(void) {
         input = read_input();
         
         if (input == NULL) {
-            // EOF (Ctrl+D)
-            printf("\n");
-            break;
+            // EOF (Ctrl+D) - handle cleanup and exit
+            handle_eof();
         }
         
+        // Trim whitespace and check if input is empty
+        trim_whitespace(input);
         if (strlen(input) == 0) {
             free(input);
             continue;

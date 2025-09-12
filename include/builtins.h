@@ -10,6 +10,8 @@ void builtin_log(char **args);
 void builtin_exit(char **args);
 void builtin_activities(char **args);
 void builtin_ping(char **args);
+void builtin_fg(char **args);
+void builtin_bg(char **args);
 
 // Command execution with history
 void execute_command_with_history(char *input);

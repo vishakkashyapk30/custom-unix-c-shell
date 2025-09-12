@@ -1,6 +1,7 @@
 #include "builtins.h"
 #include "parser.h"
 #include "input.h"
+#include "fg_bg.h"
 #include <ctype.h>
 #include <sys/stat.h>
 
@@ -69,8 +70,12 @@ void execute_command_no_history(char **args) {
         builtin_reveal(args);
     } else if (strcmp(args[0], "log") == 0) {
         builtin_log(args);
-    } else if (strcmp(args[0], "exit") == 0) {
+    } else if (strcmp(args[0], "exit") == 0 || strcmp(args[0], "logout") == 0) {
         builtin_exit(args);
+    } else if (strcmp(args[0], "fg") == 0) {
+        builtin_fg(args);
+    } else if (strcmp(args[0], "bg") == 0) {
+        builtin_bg(args);
     } else {
         // External command
         execute_single_command(args, NULL, NULL, 0);
@@ -80,6 +85,8 @@ void execute_command_no_history(char **args) {
 void builtin_exit(char **args) {
     (void)args; // Suppress unused parameter warning
     save_log_to_file();
+    printf("logout\n");
+    fflush(stdout);
     exit(0);
 }
 
@@ -127,7 +134,7 @@ void builtin_hop(char **args) {
         strncpy(previous_directory, current_path, MAX_PATH_SIZE - 1);
         previous_directory[MAX_PATH_SIZE - 1] = '\0';
     } else {
-        perror("hop");
+        printf("No such directory!\n");
     }
 }
 

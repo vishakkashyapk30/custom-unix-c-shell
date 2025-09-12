@@ -1,5 +1,6 @@
 #include "activities.h"
 #include "shell.h"
+#include "fg_bg.h"
 #include <sys/stat.h>
 
 // Structure to hold process information for sorting
@@ -70,90 +71,29 @@ int process_exists(int pid) {
 }
 
 void builtin_activities(char **args) {
-    // Check if activities.txt exists
-    FILE *activities_file = fopen("activities.txt", "r");
-    if (activities_file == NULL) {
-        printf("No activities found\n");
-        return;
-    }
+    // Use the new job control system
+    int found_jobs = 0;
     
-    // Check if file is empty
-    fseek(activities_file, 0, SEEK_END);
-    if (ftell(activities_file) == 0) {
-        printf("No activities found\n");
-        fclose(activities_file);
-        return;
-    }
-    
-    fseek(activities_file, 0, SEEK_SET);
-    
-    // Read all processes and collect valid ones
-    ProcessInfo processes[100];
-    int process_count = 0;
-    char line[512];
-    
-    while (fgets(line, sizeof(line), activities_file) && process_count < 100) {
-        // Parse line format: "pid: command_name - State"
-        char *pid_str = strtok(line, ":");
-        if (pid_str == NULL) continue;
-        
-        int pid = atoi(pid_str);
-        if (pid == 0 && strcmp(pid_str, "0") != 0) continue;
-        
-        // Check if process still exists
-        if (!process_exists(pid)) {
-            continue; // Skip non-existent processes
+    for (int i = 0; i < MAX_BACKGROUND_JOBS; i++) {
+        if (background_jobs[i].active && 
+            (background_jobs[i].status == JOB_RUNNING || background_jobs[i].status == JOB_STOPPED)) {
+            
+            // Extract command name
+            char command_copy[MAX_INPUT_SIZE];
+            strncpy(command_copy, background_jobs[i].command, MAX_INPUT_SIZE - 1);
+            command_copy[MAX_INPUT_SIZE - 1] = '\0';
+            
+            char *command_name = strtok(command_copy, " ");
+            if (!command_name) command_name = background_jobs[i].command;
+            
+            const char *status_str = (background_jobs[i].status == JOB_RUNNING) ? "Running" : "Stopped";
+            printf("[%d] : %s - %s\n", background_jobs[i].pid, command_name, status_str);
+            found_jobs = 1;
         }
-        
-        // Get command name and current state
-        char *command_part = strtok(NULL, "-");
-        if (command_part == NULL) continue;
-        
-        // Trim whitespace from command
-        char *command_start = command_part;
-        while (*command_start == ' ' || *command_start == '\t') command_start++;
-        char *command_end = command_start + strlen(command_start) - 1;
-        while (command_end > command_start && (*command_end == ' ' || *command_end == '\t' || *command_end == '\n')) {
-            command_end--;
-        }
-        *(command_end + 1) = '\0';
-        
-        // Get current process state
-        char *current_state = get_process_state(pid);
-        if (current_state == NULL) continue;
-        
-        // Store process information
-        processes[process_count].pid = pid;
-        strncpy(processes[process_count].command, command_start, 255);
-        processes[process_count].command[255] = '\0';
-        strncpy(processes[process_count].state, current_state, 31);
-        processes[process_count].state[31] = '\0';
-        
-        process_count++;
     }
     
-    fclose(activities_file);
-    
-    if (process_count == 0) {
+    if (!found_jobs) {
         printf("No activities found\n");
-        return;
-    }
-    
-    // Sort processes by command name (lexicographically)
-    qsort(processes, process_count, sizeof(ProcessInfo), compare_processes);
-    
-    // Print sorted processes
-    for (int i = 0; i < process_count; i++) {
-        printf("[%d] : %s - %s\n", processes[i].pid, processes[i].command, processes[i].state);
-    }
-    
-    // Update activities.txt with only valid processes
-    FILE *updated_file = fopen("activities.txt", "w");
-    if (updated_file != NULL) {
-        for (int i = 0; i < process_count; i++) {
-            fprintf(updated_file, "%d: %s - %s\n", processes[i].pid, processes[i].command, processes[i].state);
-        }
-        fclose(updated_file);
     }
 }
 

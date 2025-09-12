@@ -12,6 +12,7 @@
 #include <sys/utsname.h>
 #include <pwd.h>
 #include <sys/stat.h>
+#include <signal.h>
 
 #define MAX_INPUT_SIZE 1024
 #define MAX_ARGS 64

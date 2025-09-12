@@ -1,6 +1,7 @@
 #include "input.h"
 #include "parser.h"
 #include "builtins.h"
+#include "fg_bg.h"
 
 char *read_input(void) {
     char *input = malloc(MAX_INPUT_SIZE);
@@ -28,8 +29,11 @@ int is_builtin_command(const char *cmd) {
             strcmp(cmd, "reveal") == 0 || 
             strcmp(cmd, "log") == 0 ||
             strcmp(cmd, "exit") == 0 ||
+            strcmp(cmd, "logout") == 0 ||
             strcmp(cmd, "activities") == 0 ||
-            strcmp(cmd, "ping") == 0);
+            strcmp(cmd, "ping") == 0 ||
+            strcmp(cmd, "fg") == 0 ||
+            strcmp(cmd, "bg") == 0);
 }
 
 void handle_input(char *input) {
@@ -66,7 +70,7 @@ void handle_input(char *input) {
         char *cmd = parsed.commands[0][0];
         
         // Check if it's a built-in command
-        if (strcmp(cmd, "exit") == 0) {
+        if (strcmp(cmd, "exit") == 0 || strcmp(cmd, "logout") == 0) {
             add_to_log(input);
             builtin_exit(parsed.commands[0]);
         } else if (strcmp(cmd, "log") == 0) {
@@ -94,6 +98,12 @@ void handle_input(char *input) {
         } else if (strcmp(cmd, "ping") == 0) {
             add_to_log(input);
             builtin_ping(parsed.commands[0]);
+        } else if (strcmp(cmd, "fg") == 0) {
+            add_to_log(input);
+            builtin_fg(parsed.commands[0]);
+        } else if (strcmp(cmd, "bg") == 0) {
+            add_to_log(input);
+            builtin_bg(parsed.commands[0]);
         } else {
             // External command - add to log and try to execute
             add_to_log(input);
@@ -106,7 +116,7 @@ void handle_input(char *input) {
                 int result = execute_single_command(parsed.commands[0], parsed.input_file, 
                                                   parsed.output_file, parsed.append_output);
                 if (result == 127) {
-                    printf("Invalid Command (Valid Syntax)\n");
+                    printf("Command not found!\n");
                 }
             }
         }
@@ -122,7 +132,7 @@ void handle_input(char *input) {
             int result = execute_pipeline(parsed.commands, parsed.command_count, 
                                         parsed.input_file, parsed.output_file, parsed.append_output);
             if (result == 127) {
-                printf("Invalid Command (Valid Syntax)\n");
+                printf("Command not found!\n");
             }
         }
     }

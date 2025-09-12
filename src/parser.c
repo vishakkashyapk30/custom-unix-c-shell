@@ -205,12 +205,20 @@ int parse_command(char *input, ParsedCommand *parsed) {
             if (strcmp(tokens[j], "<") == 0) {
                 // Input redirection (only for first command)
                 if (i == 0 && j + 1 < token_count) {
+                    // Free previous input_redir if it exists (multiple input redirects)
+                    if (input_redir) {
+                        free(input_redir);
+                    }
                     input_redir = strdup(tokens[j + 1]);
                     j++; // Skip the filename token
                 }
             } else if (strcmp(tokens[j], ">") == 0) {
                 // Output redirection (only for last command)
                 if (i == pipe_count - 1 && j + 1 < token_count) {
+                    // Free previous output_redir if it exists (multiple output redirects)
+                    if (output_redir) {
+                        free(output_redir);
+                    }
                     output_redir = strdup(tokens[j + 1]);
                     append = 0;
                     j++; // Skip the filename token
@@ -218,6 +226,10 @@ int parse_command(char *input, ParsedCommand *parsed) {
             } else if (strcmp(tokens[j], ">>") == 0) {
                 // Append redirection (only for last command)
                 if (i == pipe_count - 1 && j + 1 < token_count) {
+                    // Free previous output_redir if it exists (multiple output redirects)
+                    if (output_redir) {
+                        free(output_redir);
+                    }
                     output_redir = strdup(tokens[j + 1]);
                     append = 1;
                     j++; // Skip the filename token
@@ -395,7 +407,7 @@ int execute_sequential_commands(char *input) {
                 int result = execute_pipeline(parsed.commands, parsed.command_count, 
                                             parsed.input_file, parsed.output_file, parsed.append_output);
                 if (result == 127) {
-                    printf("Invalid Command (Valid Syntax)\n");
+                    printf("Command not found!\n");
                 }
             }
         }

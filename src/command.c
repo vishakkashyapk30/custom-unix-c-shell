@@ -1,6 +1,7 @@
 #include "shell.h"
 #include "builtins.h"
 #include "input.h"
+#include "fg_bg.h"
 #include <unistd.h>
 #include <fcntl.h>
 
@@ -9,6 +10,9 @@ pid_t create_process(char **args, int input_fd, int output_fd, int pipe_fds[][2]
     
     if (pid == 0) {
         // Child process
+        // Set up process group
+        setpgid(0, 0);
+        
         if (input_fd != STDIN_FILENO) {
             dup2(input_fd, STDIN_FILENO);
             close(input_fd);
@@ -163,8 +167,16 @@ int execute_single_command(char **args, char *input_file, char *output_file, int
     if (input_fd != STDIN_FILENO) close(input_fd);
     if (output_fd != STDOUT_FILENO) close(output_fd);
     
+    // Set up process group for foreground job
+    setpgid(pid, pid);
+    set_foreground_process_group(pid);
+    
     int status;
-    waitpid(pid, &status, 0);
+    waitpid(pid, &status, WUNTRACED);
+    
+    // Reset foreground process group
+    reset_foreground_process_group();
+    
     return WEXITSTATUS(status);
 }
 
@@ -281,14 +293,16 @@ int execute_pipeline(char ***commands, int command_count, char *input_file, char
     
     // Wait for all processes to complete
     int last_status = 0;
+    int found_error = 0;
     for (int i = 0; i < command_count; i++) {
         int status;
         waitpid(pids[i], &status, 0);
         int exit_status = WEXITSTATUS(status);
         
         // Check if any command failed with exit status 127 (command not found)
-        if (exit_status == 127) {
-            printf("Invalid Command (Valid Syntax)\n");
+        if (exit_status == 127 && !found_error) {
+            printf("Command not found!\n");
+            found_error = 1;
         }
         
         if (i == command_count - 1) {
@@ -300,9 +314,7 @@ int execute_pipeline(char ***commands, int command_count, char *input_file, char
 }
 
 // Global variables for background job management
-static int job_count = 0;
-static pid_t background_jobs[100]; // Store up to 100 background jobs
-static char background_commands[100][256]; // Store command names
+// Old job management variables removed - now using fg_bg.h system
 
 // Function to execute a single command in background
 void execute_background_command(char **args, char *input_file, char *output_file, int append_output) {
@@ -362,23 +374,12 @@ void execute_background_command(char **args, char *input_file, char *output_file
             _exit(127);
         }
     } else if (pid > 0) {
-        // Parent process
-        job_count++;
-        background_jobs[job_count - 1] = pid;
-        strncpy(background_commands[job_count - 1], args[0], 255);
-        background_commands[job_count - 1][255] = '\0';
-        
-        // Write to activities.txt file
-        int fd = open("activities.txt", O_WRONLY | O_CREAT | O_APPEND, 0644);
-        if (fd >= 0) {
-            char temp[512];
-            sprintf(temp, "%d: %s - Running\n", pid, args[0]);
-            write(fd, temp, strlen(temp));
-            close(fd);
+        // Parent process - add to job control system
+        int job_index = add_background_job(pid, pid, args[0]);
+        if (job_index >= 0) {
+            printf("[%d] %d\n", background_jobs[job_index].job_id, pid);
+            fflush(stdout);
         }
-        
-        printf("[%d] %d\n", job_count, pid);
-        fflush(stdout);
     } else {
         perror("fork");
     }
@@ -492,53 +493,18 @@ void execute_background_pipeline(char ***commands, int command_count, char *inpu
         close(pipe_fds[i][1]);
     }
     
-    // Store the last process as the background job
-    job_count++;
-    background_jobs[job_count - 1] = pids[command_count - 1];
-    strncpy(background_commands[job_count - 1], commands[command_count - 1][0], 255);
-    background_commands[job_count - 1][255] = '\0';
-    
-    // Write to activities.txt file
-    int fd = open("activities.txt", O_WRONLY | O_CREAT | O_APPEND, 0644);
-    if (fd >= 0) {
-        char temp[512];
-        sprintf(temp, "%d: %s - Running\n", pids[command_count - 1], commands[command_count - 1][0]);
-        write(fd, temp, strlen(temp));
-        close(fd);
+    // Store the last process as the background job using new job control system
+    int job_index = add_background_job(pids[command_count - 1], pids[command_count - 1], commands[command_count - 1][0]);
+    if (job_index >= 0) {
+        printf("[%d] %d\n", background_jobs[job_index].job_id, pids[command_count - 1]);
+        fflush(stdout);
     }
-    
-    printf("[%d] %d\n", job_count, pids[command_count - 1]);
-    fflush(stdout);
 }
 
 // Function to check for completed background processes
 void check_background_jobs(void) {
-    for (int i = 0; i < job_count; i++) {
-        if (background_jobs[i] > 0) {
-            int status;
-            pid_t result = waitpid(background_jobs[i], &status, WNOHANG);
-            if (result > 0) {
-                // Process has completed
-                if (WIFEXITED(status)) {
-                    int exit_status = WEXITSTATUS(status);
-                    if (exit_status == 0) {
-                        printf("%s with pid %d exited normally\n", background_commands[i], background_jobs[i]);
-                    } else {
-                        printf("%s with pid %d exited abnormally\n", background_commands[i], background_jobs[i]);
-                    }
-                } else {
-                    printf("%s with pid %d exited abnormally\n", background_commands[i], background_jobs[i]);
-                }
-                fflush(stdout);
-                
-                // Remove this job from the list
-                for (int j = i; j < job_count - 1; j++) {
-                    background_jobs[j] = background_jobs[j + 1];
-                    strcpy(background_commands[j], background_commands[j + 1]);
-                }
-                job_count--;
-                i--; // Check the same index again since we shifted
-            }
-        }
-    }
+    // This function is now handled by the signal handler
+    // The SIGCHLD handler in signal_handlers.c will automatically
+    // update job statuses when background processes complete
+    cleanup_finished_jobs();
 }
