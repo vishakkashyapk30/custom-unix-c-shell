@@ -1,6 +1,8 @@
 #include "shell.h"
 #include "builtins.h"
 #include "input.h"
+#include <unistd.h>
+#include <fcntl.h>
 
 pid_t create_process(char **args, int input_fd, int output_fd, int pipe_fds[][2], int num_pipes) {
     pid_t pid = fork();
@@ -252,6 +254,10 @@ int execute_pipeline(char ***commands, int command_count, char *input_file, char
                     builtin_log(commands[i]);
                 } else if (strcmp(commands[i][0], "hop") == 0) {
                     builtin_hop(commands[i]);
+                } else if (strcmp(commands[i][0], "activities") == 0) {
+                    builtin_activities(commands[i]);
+                } else if (strcmp(commands[i][0], "ping") == 0) {
+                    builtin_ping(commands[i]);
                 }
                 exit(0);
             } else {
@@ -344,6 +350,10 @@ void execute_background_command(char **args, char *input_file, char *output_file
                 builtin_log(args);
             } else if (strcmp(args[0], "hop") == 0) {
                 builtin_hop(args);
+            } else if (strcmp(args[0], "activities") == 0) {
+                builtin_activities(args);
+            } else if (strcmp(args[0], "ping") == 0) {
+                builtin_ping(args);
             }
             exit(0);
         } else {
@@ -357,6 +367,15 @@ void execute_background_command(char **args, char *input_file, char *output_file
         background_jobs[job_count - 1] = pid;
         strncpy(background_commands[job_count - 1], args[0], 255);
         background_commands[job_count - 1][255] = '\0';
+        
+        // Write to activities.txt file
+        int fd = open("activities.txt", O_WRONLY | O_CREAT | O_APPEND, 0644);
+        if (fd >= 0) {
+            char temp[512];
+            sprintf(temp, "%d: %s - Running\n", pid, args[0]);
+            write(fd, temp, strlen(temp));
+            close(fd);
+        }
         
         printf("[%d] %d\n", job_count, pid);
         fflush(stdout);
@@ -449,6 +468,10 @@ void execute_background_pipeline(char ***commands, int command_count, char *inpu
                     builtin_log(commands[i]);
                 } else if (strcmp(commands[i][0], "hop") == 0) {
                     builtin_hop(commands[i]);
+                } else if (strcmp(commands[i][0], "activities") == 0) {
+                    builtin_activities(commands[i]);
+                } else if (strcmp(commands[i][0], "ping") == 0) {
+                    builtin_ping(commands[i]);
                 }
                 exit(0);
             } else {
@@ -474,6 +497,15 @@ void execute_background_pipeline(char ***commands, int command_count, char *inpu
     background_jobs[job_count - 1] = pids[command_count - 1];
     strncpy(background_commands[job_count - 1], commands[command_count - 1][0], 255);
     background_commands[job_count - 1][255] = '\0';
+    
+    // Write to activities.txt file
+    int fd = open("activities.txt", O_WRONLY | O_CREAT | O_APPEND, 0644);
+    if (fd >= 0) {
+        char temp[512];
+        sprintf(temp, "%d: %s - Running\n", pids[command_count - 1], commands[command_count - 1][0]);
+        write(fd, temp, strlen(temp));
+        close(fd);
+    }
     
     printf("[%d] %d\n", job_count, pids[command_count - 1]);
     fflush(stdout);

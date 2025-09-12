@@ -27,7 +27,9 @@ int is_builtin_command(const char *cmd) {
     return (strcmp(cmd, "hop") == 0 || 
             strcmp(cmd, "reveal") == 0 || 
             strcmp(cmd, "log") == 0 ||
-            strcmp(cmd, "exit") == 0);
+            strcmp(cmd, "exit") == 0 ||
+            strcmp(cmd, "activities") == 0 ||
+            strcmp(cmd, "ping") == 0);
 }
 
 void handle_input(char *input) {
@@ -86,6 +88,12 @@ void handle_input(char *input) {
             } else {
                 builtin_reveal(parsed.commands[0]);
             }
+        } else if (strcmp(cmd, "activities") == 0) {
+            add_to_log(input);
+            builtin_activities(parsed.commands[0]);
+        } else if (strcmp(cmd, "ping") == 0) {
+            add_to_log(input);
+            builtin_ping(parsed.commands[0]);
         } else {
             // External command - add to log and try to execute
             add_to_log(input);

@@ -8,6 +8,8 @@ void builtin_hop(char **args);
 void builtin_reveal(char **args);
 void builtin_log(char **args);
 void builtin_exit(char **args);
+void builtin_activities(char **args);
+void builtin_ping(char **args);
 
 // Command execution with history
 void execute_command_with_history(char *input);

@@ -361,6 +361,12 @@ int execute_sequential_commands(char *input) {
                 } else {
                     builtin_reveal(parsed.commands[0]);
                 }
+            } else if (strcmp(cmd, "activities") == 0) {
+                add_to_log(semicolon_parts[i]);
+                builtin_activities(parsed.commands[0]);
+            } else if (strcmp(cmd, "ping") == 0) {
+                add_to_log(semicolon_parts[i]);
+                builtin_ping(parsed.commands[0]);
             } else {
                 // External command
                 add_to_log(semicolon_parts[i]);

@@ -38,6 +38,10 @@ void execute_background_command(char **args, char *input_file, char *output_file
 void execute_background_pipeline(char ***commands, int command_count, char *input_file, char *output_file, int append_output);
 void check_background_jobs(void);
 
+// Additional builtin commands
+void builtin_activities(char **args);
+void builtin_ping(char **args);
+
 // Process management
 pid_t create_process(char **args, int input_fd, int output_fd, int pipe_fds[][2], int num_pipes);
 pid_t create_builtin_process(char **args, int input_fd, int output_fd, int pipe_fds[][2], int num_pipes);
