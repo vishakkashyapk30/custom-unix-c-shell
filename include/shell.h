@@ -33,6 +33,11 @@ int execute_single_command(char **args, char *input_file, char *output_file, int
 int execute_pipeline(char ***commands, int command_count, char *input_file, char *output_file, int append_output);
 int execute_builtin_with_redirection(const char *builtin_name, char **args, char *input_file, char *output_file, int append_output);
 
+// Background execution
+void execute_background_command(char **args, char *input_file, char *output_file, int append_output);
+void execute_background_pipeline(char ***commands, int command_count, char *input_file, char *output_file, int append_output);
+void check_background_jobs(void);
+
 // Process management
 pid_t create_process(char **args, int input_fd, int output_fd, int pipe_fds[][2], int num_pipes);
 pid_t create_builtin_process(char **args, int input_fd, int output_fd, int pipe_fds[][2], int num_pipes);

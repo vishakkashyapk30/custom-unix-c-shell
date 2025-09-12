@@ -31,6 +31,16 @@ int is_builtin_command(const char *cmd) {
 }
 
 void handle_input(char *input) {
+    // Check for completed background jobs before processing new input
+    check_background_jobs();
+    
+    // Check if this is a sequential command (contains semicolon)
+    if (strchr(input, ';') != NULL) {
+        // Handle sequential execution
+        execute_sequential_commands(input);
+        return;
+    }
+    
     ParsedCommand parsed;
     
     // Check syntax first
@@ -79,19 +89,33 @@ void handle_input(char *input) {
         } else {
             // External command - add to log and try to execute
             add_to_log(input);
-            int result = execute_single_command(parsed.commands[0], parsed.input_file, 
-                                              parsed.output_file, parsed.append_output);
-            if (result == 127) {
-                printf("Invalid Command (Valid Syntax)\n");
+            if (parsed.background) {
+                // Execute in background
+                execute_background_command(parsed.commands[0], parsed.input_file, 
+                                         parsed.output_file, parsed.append_output);
+            } else {
+                // Execute in foreground
+                int result = execute_single_command(parsed.commands[0], parsed.input_file, 
+                                                  parsed.output_file, parsed.append_output);
+                if (result == 127) {
+                    printf("Invalid Command (Valid Syntax)\n");
+                }
             }
         }
     } else if (parsed.command_count > 1) {
         // Pipeline case - add to log and execute
         add_to_log(input);
-        int result = execute_pipeline(parsed.commands, parsed.command_count, 
-                                    parsed.input_file, parsed.output_file, parsed.append_output);
-        if (result == 127) {
-            printf("Invalid Command (Valid Syntax)\n");
+        if (parsed.background) {
+            // Execute pipeline in background
+            execute_background_pipeline(parsed.commands, parsed.command_count, 
+                                      parsed.input_file, parsed.output_file, parsed.append_output);
+        } else {
+            // Execute pipeline in foreground
+            int result = execute_pipeline(parsed.commands, parsed.command_count, 
+                                        parsed.input_file, parsed.output_file, parsed.append_output);
+            if (result == 127) {
+                printf("Invalid Command (Valid Syntax)\n");
+            }
         }
     }
     

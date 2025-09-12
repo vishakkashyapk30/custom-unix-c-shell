@@ -19,5 +19,6 @@ int is_valid_syntax(char *input);
 int parse_shell_command(const char *command);
 char **tokenize_command(char *command);
 void trim_whitespace(char *str);
+int execute_sequential_commands(char *input);
 
 #endif

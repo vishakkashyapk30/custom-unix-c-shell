@@ -292,3 +292,221 @@ int execute_pipeline(char ***commands, int command_count, char *input_file, char
     
     return last_status;
 }
+
+// Global variables for background job management
+static int job_count = 0;
+static pid_t background_jobs[100]; // Store up to 100 background jobs
+static char background_commands[100][256]; // Store command names
+
+// Function to execute a single command in background
+void execute_background_command(char **args, char *input_file, char *output_file, int append_output) {
+    pid_t pid = fork();
+    
+    if (pid == 0) {
+        // Child process
+        // Set up process group
+        setpgid(0, 0);
+        
+        // Handle file redirections
+        if (input_file) {
+            int input_fd = open(input_file, O_RDONLY);
+            if (input_fd == -1) {
+                printf("No such file or directory\n");
+                exit(EXIT_FAILURE);
+            }
+            if (dup2(input_fd, STDIN_FILENO) == -1) {
+                perror("dup2");
+                exit(EXIT_FAILURE);
+            }
+            close(input_fd);
+        }
+        
+        if (output_file) {
+            int flags = O_WRONLY | O_CREAT;
+            flags |= append_output ? O_APPEND : O_TRUNC;
+            int output_fd = open(output_file, flags, 0644);
+            if (output_fd == -1) {
+                printf("Unable to create file for writing\n");
+                exit(EXIT_FAILURE);
+            }
+            if (dup2(output_fd, STDOUT_FILENO) == -1) {
+                perror("dup2");
+                exit(EXIT_FAILURE);
+            }
+            close(output_fd);
+        }
+        
+        // Execute the command
+        if (is_builtin_command(args[0])) {
+            if (strcmp(args[0], "reveal") == 0) {
+                builtin_reveal(args);
+            } else if (strcmp(args[0], "log") == 0) {
+                builtin_log(args);
+            } else if (strcmp(args[0], "hop") == 0) {
+                builtin_hop(args);
+            }
+            exit(0);
+        } else {
+            execvp(args[0], args);
+            // If execvp returns, the command could not be executed
+            _exit(127);
+        }
+    } else if (pid > 0) {
+        // Parent process
+        job_count++;
+        background_jobs[job_count - 1] = pid;
+        strncpy(background_commands[job_count - 1], args[0], 255);
+        background_commands[job_count - 1][255] = '\0';
+        
+        printf("[%d] %d\n", job_count, pid);
+        fflush(stdout);
+    } else {
+        perror("fork");
+    }
+}
+
+// Function to execute a pipeline in background
+void execute_background_pipeline(char ***commands, int command_count, char *input_file, char *output_file, int append_output) {
+    if (command_count == 1) {
+        execute_background_command(commands[0], input_file, output_file, append_output);
+        return;
+    }
+    
+    int pipe_fds[command_count - 1][2];
+    pid_t pids[command_count];
+    
+    // Create all pipes
+    for (int i = 0; i < command_count - 1; i++) {
+        if (pipe(pipe_fds[i]) == -1) {
+            perror("pipe");
+            return;
+        }
+    }
+    
+    // Execute each command in the pipeline
+    for (int i = 0; i < command_count; i++) {
+        pid_t pid = fork();
+        if (pid == 0) {
+            // Child process
+            
+            // Set up process group
+            setpgid(0, 0);
+            
+            // Set up pipe connections
+            if (i > 0) {
+                if (dup2(pipe_fds[i-1][0], STDIN_FILENO) == -1) {
+                    perror("dup2");
+                    exit(EXIT_FAILURE);
+                }
+            }
+            if (i < command_count - 1) {
+                if (dup2(pipe_fds[i][1], STDOUT_FILENO) == -1) {
+                    perror("dup2");
+                    exit(EXIT_FAILURE);
+                }
+            }
+            
+            // Close all pipe file descriptors in child
+            for (int j = 0; j < command_count - 1; j++) {
+                close(pipe_fds[j][0]);
+                close(pipe_fds[j][1]);
+            }
+            
+            // Handle file redirections
+            if (i == 0 && input_file) {
+                int input_fd = open(input_file, O_RDONLY);
+                if (input_fd == -1) {
+                    printf("No such file or directory\n");
+                    exit(EXIT_FAILURE);
+                }
+                if (dup2(input_fd, STDIN_FILENO) == -1) {
+                    perror("dup2");
+                    exit(EXIT_FAILURE);
+                }
+                close(input_fd);
+            }
+            
+            if (i == command_count - 1 && output_file) {
+                int flags = O_WRONLY | O_CREAT;
+                flags |= append_output ? O_APPEND : O_TRUNC;
+                int output_fd = open(output_file, flags, 0644);
+                if (output_fd == -1) {
+                    printf("Unable to create file for writing\n");
+                    exit(EXIT_FAILURE);
+                }
+                if (dup2(output_fd, STDOUT_FILENO) == -1) {
+                    perror("dup2");
+                    exit(EXIT_FAILURE);
+                }
+                close(output_fd);
+            }
+            
+            // Execute the command
+            if (is_builtin_command(commands[i][0])) {
+                if (strcmp(commands[i][0], "reveal") == 0) {
+                    builtin_reveal(commands[i]);
+                } else if (strcmp(commands[i][0], "log") == 0) {
+                    builtin_log(commands[i]);
+                } else if (strcmp(commands[i][0], "hop") == 0) {
+                    builtin_hop(commands[i]);
+                }
+                exit(0);
+            } else {
+                execvp(commands[i][0], commands[i]);
+                _exit(127);
+            }
+        } else if (pid < 0) {
+            perror("fork");
+            return;
+        } else {
+            pids[i] = pid;
+        }
+    }
+    
+    // Close all pipe file descriptors in parent
+    for (int i = 0; i < command_count - 1; i++) {
+        close(pipe_fds[i][0]);
+        close(pipe_fds[i][1]);
+    }
+    
+    // Store the last process as the background job
+    job_count++;
+    background_jobs[job_count - 1] = pids[command_count - 1];
+    strncpy(background_commands[job_count - 1], commands[command_count - 1][0], 255);
+    background_commands[job_count - 1][255] = '\0';
+    
+    printf("[%d] %d\n", job_count, pids[command_count - 1]);
+    fflush(stdout);
+}
+
+// Function to check for completed background processes
+void check_background_jobs(void) {
+    for (int i = 0; i < job_count; i++) {
+        if (background_jobs[i] > 0) {
+            int status;
+            pid_t result = waitpid(background_jobs[i], &status, WNOHANG);
+            if (result > 0) {
+                // Process has completed
+                if (WIFEXITED(status)) {
+                    int exit_status = WEXITSTATUS(status);
+                    if (exit_status == 0) {
+                        printf("%s with pid %d exited normally\n", background_commands[i], background_jobs[i]);
+                    } else {
+                        printf("%s with pid %d exited abnormally\n", background_commands[i], background_jobs[i]);
+                    }
+                } else {
+                    printf("%s with pid %d exited abnormally\n", background_commands[i], background_jobs[i]);
+                }
+                fflush(stdout);
+                
+                // Remove this job from the list
+                for (int j = i; j < job_count - 1; j++) {
+                    background_jobs[j] = background_jobs[j + 1];
+                    strcpy(background_commands[j], background_commands[j + 1]);
+                }
+                job_count--;
+                i--; // Check the same index again since we shifted
+            }
+        }
+    }
+}
