@@ -53,8 +53,19 @@ void shell_loop(void) {
         input = read_input();
         
         if (input == NULL) {
-            // EOF (Ctrl+D) - handle cleanup and exit
-            handle_eof();
+            // EOF (Ctrl+D) - handle cleanup and exit gracefully
+            // Kill all background processes
+            kill_all_background_jobs();
+            
+            // Wait for all background processes to terminate
+            wait_for_background_jobs();
+            
+            // Print logout message
+            printf("logout\n");
+            fflush(stdout);
+            
+            // Exit the loop instead of calling exit()
+            break;
         }
         
         // Trim whitespace and check if input is empty

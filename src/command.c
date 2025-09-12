@@ -10,8 +10,7 @@ pid_t create_process(char **args, int input_fd, int output_fd, int pipe_fds[][2]
     
     if (pid == 0) {
         // Child process
-        // Set up process group
-        setpgid(0, 0);
+        // Don't set process group here for single commands
         
         if (input_fd != STDIN_FILENO) {
             dup2(input_fd, STDIN_FILENO);
@@ -179,15 +178,10 @@ int execute_single_command(char **args, char *input_file, char *output_file, int
     if (input_fd != STDIN_FILENO) close(input_fd);
     if (output_fd != STDOUT_FILENO) close(output_fd);
     
-    // Set up process group for foreground job
-    setpgid(pid, pid);
-    set_foreground_process_group(pid);
-    
+    // Don't change process groups for simple commands
+    // Just wait for the child process
     int status;
     waitpid(pid, &status, WUNTRACED);
-    
-    // Reset foreground process group
-    reset_foreground_process_group();
     
     return WEXITSTATUS(status);
 }
@@ -219,14 +213,14 @@ int execute_pipeline(char ***commands, int command_count, char *input_file, char
                 // Not the first command - read from previous pipe
                 if (dup2(pipe_fds[i-1][0], STDIN_FILENO) == -1) {
                     perror("dup2");
-                    exit(EXIT_FAILURE);
+                    _exit(EXIT_FAILURE);
                 }
             }
             if (i < command_count - 1) {
                 // Not the last command - write to next pipe
                 if (dup2(pipe_fds[i][1], STDOUT_FILENO) == -1) {
                     perror("dup2");
-                    exit(EXIT_FAILURE);
+                    _exit(EXIT_FAILURE);
                 }
             }
             
@@ -245,11 +239,11 @@ int execute_pipeline(char ***commands, int command_count, char *input_file, char
                 input_fd = open(input_file, O_RDONLY);
                 if (input_fd == -1) {
                     printf("No such file or directory\n");
-                    exit(EXIT_FAILURE);
+                    _exit(EXIT_FAILURE);
                 }
                 if (dup2(input_fd, STDIN_FILENO) == -1) {
                     perror("dup2");
-                    exit(EXIT_FAILURE);
+                    _exit(EXIT_FAILURE);
                 }
                 close(input_fd);
             }
@@ -261,11 +255,11 @@ int execute_pipeline(char ***commands, int command_count, char *input_file, char
                 output_fd = open(output_file, flags, 0644);
                 if (output_fd == -1) {
                     printf("Unable to create file for writing\n");
-                    exit(EXIT_FAILURE);
+                    _exit(EXIT_FAILURE);
                 }
                 if (dup2(output_fd, STDOUT_FILENO) == -1) {
                     perror("dup2");
-                    exit(EXIT_FAILURE);
+                    _exit(EXIT_FAILURE);
                 }
                 close(output_fd);
             }
@@ -325,16 +319,13 @@ int execute_pipeline(char ***commands, int command_count, char *input_file, char
     return last_status;
 }
 
-// Global variables for background job management
-// Old job management variables removed - now using fg_bg.h system
-
 // Function to execute a single command in background
 void execute_background_command(char **args, char *input_file, char *output_file, int append_output) {
     pid_t pid = fork();
     
     if (pid == 0) {
         // Child process
-        // Set up process group
+        // Set up process group for background job
         setpgid(0, 0);
         
         // Handle file redirections
@@ -342,11 +333,11 @@ void execute_background_command(char **args, char *input_file, char *output_file
             int input_fd = open(input_file, O_RDONLY);
             if (input_fd == -1) {
                 printf("No such file or directory\n");
-                exit(EXIT_FAILURE);
+                _exit(EXIT_FAILURE);
             }
             if (dup2(input_fd, STDIN_FILENO) == -1) {
                 perror("dup2");
-                exit(EXIT_FAILURE);
+                _exit(EXIT_FAILURE);
             }
             close(input_fd);
         }
@@ -357,11 +348,11 @@ void execute_background_command(char **args, char *input_file, char *output_file
             int output_fd = open(output_file, flags, 0644);
             if (output_fd == -1) {
                 printf("Unable to create file for writing\n");
-                exit(EXIT_FAILURE);
+                _exit(EXIT_FAILURE);
             }
             if (dup2(output_fd, STDOUT_FILENO) == -1) {
                 perror("dup2");
-                exit(EXIT_FAILURE);
+                _exit(EXIT_FAILURE);
             }
             close(output_fd);
         }
@@ -379,7 +370,7 @@ void execute_background_command(char **args, char *input_file, char *output_file
             } else if (strcmp(args[0], "ping") == 0) {
                 builtin_ping(args);
             }
-            exit(0);
+            _exit(0);
         } else {
             execvp(args[0], args);
             // If execvp returns, the command could not be executed
@@ -421,7 +412,7 @@ void execute_background_pipeline(char ***commands, int command_count, char *inpu
         if (pid == 0) {
             // Child process
             
-            // Set up process group
+            // Set up process group for background pipeline
             setpgid(0, 0);
             
             // Set up pipe connections

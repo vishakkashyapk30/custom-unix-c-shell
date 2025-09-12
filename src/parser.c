@@ -131,7 +131,7 @@ char **tokenize_command(char *command) {
 
 int parse_command(char *input, ParsedCommand *parsed) {
     memset(parsed, 0, sizeof(ParsedCommand));
-    
+    int out_fail=0;
     char *input_copy = strdup(input);
     trim_whitespace(input_copy);
     
@@ -235,10 +235,18 @@ int parse_command(char *input, ParsedCommand *parsed) {
             } else if (strcmp(tokens[j], ">") == 0) {
                 // Output redirection (only for last command)
                 if (i == pipe_count - 1 && j + 1 < token_count) {
-                    // Free previous output_redir if it exists (multiple output redirects)
+                    // Free previous output_redir if it exists (use last redirection)
                     if (output_redir) {
                         free(output_redir);
                     }
+                    char* temp=strdup(tokens[j + 1]);
+                    int fd=open( temp, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+                    if(out_fail==0)
+                        output_redir = temp;
+                    if(fd==-1){
+                        out_fail=1;
+                    }
+                    close(fd);
                     output_redir = strdup(tokens[j + 1]);
                     append = 0;
                     j++; // Skip the filename token
@@ -246,7 +254,7 @@ int parse_command(char *input, ParsedCommand *parsed) {
             } else if (strcmp(tokens[j], ">>") == 0) {
                 // Append redirection (only for last command)
                 if (i == pipe_count - 1 && j + 1 < token_count) {
-                    // Free previous output_redir if it exists (multiple output redirects)
+                    // Free previous output_redir if it exists (use last redirection)
                     if (output_redir) {
                         free(output_redir);
                     }
