@@ -138,11 +138,9 @@ void handle_input(char *input) {
                                       parsed.input_file, parsed.output_file, parsed.append_output);
         } else {
             // Execute pipeline in foreground
-            int result = execute_pipeline(parsed.commands, parsed.command_count, 
-                                        parsed.input_file, parsed.output_file, parsed.append_output);
-            if (result == 127) {
-                printf("Command not found!\n");
-            }
+            // Note: execute_pipeline now handles printing "Command not found!" internally
+            execute_pipeline(parsed.commands, parsed.command_count, 
+                           parsed.input_file, parsed.output_file, parsed.append_output);
         }
     }
     
