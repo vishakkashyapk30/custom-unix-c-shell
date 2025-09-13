@@ -1,8 +1,18 @@
+#define _GNU_SOURCE
+#define _POSIX_C_SOURCE 200809L
+
 #include "signal_handlers.h"
-#include "fg_bg.h"
+#include "jobs.h"
 #include <sys/wait.h>
 #include <termios.h>
 #include <errno.h>
+#include <signal.h>
+#include <string.h>
+#include <stdio.h>
+#include <stdlib.h>
+
+// Global variable definition
+pid_t foreground_pgid = 0;
 
 void setup_signal_handlers(void) {
     struct sigaction sa_int, sa_tstp, sa_chld;
@@ -32,17 +42,21 @@ void setup_signal_handlers(void) {
     }
 }
 
+// ...existing code...
+
 void sigint_handler(int sig) {
     (void)sig;  // Suppress unused parameter warning
     
     if (foreground_pgid > 0) {
         // Send SIGINT to foreground process group
         if (kill(-foreground_pgid, SIGINT) == -1) {
-            perror("kill SIGINT");
+            if (errno != ESRCH) {
+                perror("kill SIGINT");
+            }
         }
     }
     
-    // Don't terminate the shell - just print a newline
+    // Print newline but don't terminate shell
     if (write(STDOUT_FILENO, "\n", 1) == -1) {
         perror("write");
     }
@@ -52,66 +66,69 @@ void sigtstp_handler(int sig) {
     (void)sig;  // Suppress unused parameter warning
     
     if (foreground_pgid > 0) {
+        pid_t fg_pid = foreground_pgid;
+        
         // Send SIGTSTP to foreground process group
         if (kill(-foreground_pgid, SIGTSTP) == -1) {
-            // Don't print error for non-existent processes
             if (errno != ESRCH) {
                 perror("kill SIGTSTP");
             }
+            return;
         }
         
-        // Move to background with stopped status
-        int job_found = 0;
-        for (int i = 0; i < MAX_BACKGROUND_JOBS; i++) {
-            if (background_jobs[i].active && background_jobs[i].pgid == foreground_pgid) {
-                background_jobs[i].status = JOB_STOPPED;
-                
-                // Extract command name
-                char command_copy[MAX_INPUT_SIZE];
-                strncpy(command_copy, background_jobs[i].command, MAX_INPUT_SIZE - 1);
-                command_copy[MAX_INPUT_SIZE - 1] = '\0';
-                
-                char *command_name = strtok(command_copy, " ");
-                if (!command_name) command_name = background_jobs[i].command;
-                
-                printf("\n[%d] Stopped %s\n", background_jobs[i].job_id, command_name);
-                fflush(stdout);
-                job_found = 1;
-                break;
-            }
-        }
+        // Wait for process to stop
+        int status;
+        pid_t result = waitpid(-fg_pid, &status, WUNTRACED);
         
-        // If job not found in background jobs, add it
-        if (!job_found) {
-            // Try to get the command name from /proc/pid/cmdline
-            char cmdline_path[256];
-            char command_name[256] = "suspended_command";
+        if (result > 0 && WIFSTOPPED(status)) {
+            // Get command name
+            char command_name[256] = "unknown";
+            char cmdline_path[512];
+            snprintf(cmdline_path, sizeof(cmdline_path), "/proc/%d/comm", fg_pid);
             
-            sprintf(cmdline_path, "/proc/%d/cmdline", foreground_pgid);
-            FILE *cmdline_file = fopen(cmdline_path, "r");
-            if (cmdline_file) {
-                if (fgets(command_name, sizeof(command_name), cmdline_file)) {
-                    // Replace null bytes with spaces
-                    for (int i = 0; command_name[i]; i++) {
-                        if (command_name[i] == '\0') {
-                            command_name[i] = ' ';
-                        }
-                    }
+            FILE *comm_file = fopen(cmdline_path, "r");
+            if (comm_file) {
+                if (fgets(command_name, sizeof(command_name), comm_file)) {
+                    // Remove newline
+                    command_name[strcspn(command_name, "\n")] = '\0';
                 }
-                fclose(cmdline_file);
+                fclose(comm_file);
             }
             
-            int job_index = add_background_job(foreground_pgid, foreground_pgid, command_name);
+            // Find or add job
+            int job_index = -1;
+            int job_id = 1;
+            
+            // Look for existing job
+            for (int i = 0; i < MAX_BACKGROUND_JOBS; i++) {
+                if (background_jobs[i].active && 
+                    (background_jobs[i].pgid == fg_pid || background_jobs[i].pid == fg_pid)) {
+                    job_index = i;
+                    job_id = background_jobs[i].job_id;
+                    break;
+                }
+            }
+            
+            // If not found, add new job
+            if (job_index == -1) {
+                job_index = add_background_job(fg_pid, fg_pid, command_name);
+                if (job_index >= 0) {
+                    job_id = background_jobs[job_index].job_id;
+                }
+            }
+            
+            // Update job status
             if (job_index >= 0) {
                 background_jobs[job_index].status = JOB_STOPPED;
-                printf("\n[%d] Stopped %s\n", background_jobs[job_index].job_id, command_name);
+                printf("\n[%d] Stopped %s\n", job_id, command_name);
                 fflush(stdout);
             }
         }
         
-        foreground_pgid = 0;  // No foreground process now
+        foreground_pgid = 0;  // Clear foreground process
     }
     
+    // Print newline for prompt
     if (write(STDOUT_FILENO, "\n", 1) == -1) {
         perror("write");
     }
@@ -187,3 +204,16 @@ void handle_eof(void) {
     exit(0);
 }
 
+void set_foreground_process_group(pid_t pgid) {
+    foreground_pgid = pgid;
+    if (tcsetpgrp(STDIN_FILENO, pgid) == -1) {
+        perror("tcsetpgrp");
+    }
+}
+
+void reset_foreground_process_group(void) {
+    foreground_pgid = 0;
+    if (tcsetpgrp(STDIN_FILENO, getpgrp()) == -1) {
+        perror("tcsetpgrp");
+    }
+}

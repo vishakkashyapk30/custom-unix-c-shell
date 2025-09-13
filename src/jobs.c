@@ -1,5 +1,11 @@
 #include "jobs.h"
-#include "signals.h"
+#include "signal_handlers.h"
+#include <string.h>
+#include <stdlib.h>
+#include <errno.h>
+
+BackgroundJob background_jobs[MAX_BACKGROUND_JOBS];
+int next_job_id = 1;
 
 void builtin_fg(char **args) {
     int job_index;
@@ -23,16 +29,18 @@ void builtin_fg(char **args) {
     
     BackgroundJob *job = &background_jobs[job_index];
     printf("%s\n", job->command);
+    fflush(stdout);
     
     // Set as foreground process group
-    foreground_pgid = job->pgid;
-    if (tcsetpgrp(STDIN_FILENO, job->pgid) == -1) {
-        perror("tcsetpgrp");
-    }
+    set_foreground_process_group(job->pgid);
     
     // If stopped, send SIGCONT
     if (job->status == JOB_STOPPED) {
-        kill(-job->pgid, SIGCONT);
+        if (kill(-job->pgid, SIGCONT) == -1) {
+            perror("kill SIGCONT");
+            reset_foreground_process_group();
+            return;
+        }
     }
     
     job->status = JOB_RUNNING;
@@ -42,10 +50,7 @@ void builtin_fg(char **args) {
     pid_t result = waitpid(job->pid, &status, WUNTRACED);
     
     // Reset terminal control to shell
-    if (tcsetpgrp(STDIN_FILENO, getpgrp()) == -1) {
-        perror("tcsetpgrp");
-    }
-    foreground_pgid = 0;
+    reset_foreground_process_group();
     
     if (result > 0) {
         if (WIFEXITED(status) || WIFSIGNALED(status)) {
@@ -105,16 +110,15 @@ void builtin_bg(char **args) {
     }
     
     // Resume the job in background
-    kill(-job->pgid, SIGCONT);
+    if (kill(-job->pgid, SIGCONT) == -1) {
+        perror("kill SIGCONT");
+        return;
+    }
+    
     job->status = JOB_RUNNING;
     
-    char command_copy[MAX_INPUT_SIZE];
-    strncpy(command_copy, job->command, MAX_INPUT_SIZE - 1);
-    command_copy[MAX_INPUT_SIZE - 1] = '\0';
-    
-    char *command_name = strtok(command_copy, " ");
-    if (!command_name) command_name = job->command;
-    printf("[%d] %s &\n", job->job_id, command_name);
+    // Print the command being backgrounded
+    printf("[%d] %s &\n", job->job_id, job->command);
 }
 
 void builtin_activities(char **args) {
@@ -234,6 +238,64 @@ void cleanup_finished_jobs(void) {
     for (int i = 0; i < MAX_BACKGROUND_JOBS; i++) {
         if (background_jobs[i].active && background_jobs[i].status == JOB_DONE) {
             background_jobs[i].active = 0;
+        }
+    }
+}
+
+int add_background_job(pid_t pid, pid_t pgid, const char *command) {
+    for (int i = 0; i < MAX_BACKGROUND_JOBS; i++) {
+        if (!background_jobs[i].active) {
+            background_jobs[i].pid = pid;
+            background_jobs[i].pgid = pgid;
+            background_jobs[i].job_id = next_job_id++;
+            strncpy(background_jobs[i].command, command, MAX_INPUT_SIZE - 1);
+            background_jobs[i].command[MAX_INPUT_SIZE - 1] = '\0';
+            background_jobs[i].status = JOB_RUNNING;
+            background_jobs[i].active = 1;
+            return i;
+        }
+    }
+    return -1; // No available slots
+}
+
+void remove_background_job(int index) {
+    if (index >= 0 && index < MAX_BACKGROUND_JOBS) {
+        background_jobs[index].active = 0;
+    }
+}
+
+void kill_all_background_jobs(void) {
+    for (int i = 0; i < MAX_BACKGROUND_JOBS; i++) {
+        if (background_jobs[i].active) {
+            kill(-background_jobs[i].pgid, SIGTERM);
+            background_jobs[i].active = 0;
+        }
+    }
+}
+
+void wait_for_background_jobs(void) {
+    pid_t pid;
+    int status;
+    
+    // Non-blocking wait for any child process
+    while ((pid = waitpid(-1, &status, WNOHANG | WUNTRACED)) > 0) {
+        // Find the job with this PID
+        for (int i = 0; i < MAX_BACKGROUND_JOBS; i++) {
+            if (background_jobs[i].active && background_jobs[i].pid == pid) {
+                if (WIFEXITED(status) || WIFSIGNALED(status)) {
+                    background_jobs[i].status = JOB_DONE;
+                } else if (WIFSTOPPED(status)) {
+                    background_jobs[i].status = JOB_STOPPED;
+                    char command_copy[MAX_INPUT_SIZE];
+                    strncpy(command_copy, background_jobs[i].command, MAX_INPUT_SIZE - 1);
+                    command_copy[MAX_INPUT_SIZE - 1] = '\0';
+                    
+                    char *command_name = strtok(command_copy, " ");
+                    if (!command_name) command_name = background_jobs[i].command;
+                    printf("[%d] Stopped %s\n", background_jobs[i].job_id, command_name);
+                }
+                break;
+            }
         }
     }
 }

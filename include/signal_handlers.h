@@ -2,8 +2,12 @@
 #define SIGNAL_HANDLERS_H
 
 #include "shell.h"
-#include "fg_bg.h"
 #include <signal.h>
+#include <sys/types.h>
+#include <unistd.h>
+
+// Global variable for foreground process group
+extern pid_t foreground_pgid;
 
 // Signal handling functions
 void setup_signal_handlers(void);
