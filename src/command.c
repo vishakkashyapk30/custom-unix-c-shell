@@ -1,3 +1,266 @@
+// #include "shell.h"
+// #include "builtins.h"
+// #include "input.h"
+// #include "fg_bg.h"
+// #include <unistd.h>
+// #include <fcntl.h>
+// #include <sys/wait.h>
+
+// pid_t create_process(char **args, int input_fd, int output_fd, int pipe_fds[][2], int num_pipes) {
+//     pid_t pid = fork();
+    
+//     if (pid == 0) {
+//         // Child process
+//         if (input_fd != STDIN_FILENO) {
+//             dup2(input_fd, STDIN_FILENO);
+//             close(input_fd);
+//         }
+        
+//         if (output_fd != STDOUT_FILENO) {
+//             dup2(output_fd, STDOUT_FILENO);
+//             close(output_fd);
+//         }
+        
+//         // Close all pipe file descriptors in child
+//         for (int i = 0; i < num_pipes; i++) {
+//             close(pipe_fds[i][0]);
+//             close(pipe_fds[i][1]);
+//         }
+        
+//         execvp(args[0], args);
+//         // If execvp returns, the command could not be executed
+//         fprintf(stderr, "Command not found!\n");
+//         _exit(127);
+//     }
+    
+//     return pid;
+// }
+
+// pid_t create_builtin_process(char **args, int input_fd, int output_fd, int pipe_fds[][2], int num_pipes) {
+//     pid_t pid = fork();
+    
+//     if (pid == 0) {
+//         // Child process - redirect I/O
+//         if (input_fd != STDIN_FILENO) {
+//             dup2(input_fd, STDIN_FILENO);
+//             close(input_fd);
+//         }
+        
+//         if (output_fd != STDOUT_FILENO) {
+//             dup2(output_fd, STDOUT_FILENO);
+//             close(output_fd);
+//         }
+        
+//         // Close all pipe file descriptors in child
+//         for (int i = 0; i < num_pipes; i++) {
+//             close(pipe_fds[i][0]);
+//             close(pipe_fds[i][1]);
+//         }
+        
+//         // Execute builtin command
+//         if (strcmp(args[0], "reveal") == 0) {
+//             builtin_reveal(args);
+//         } else if (strcmp(args[0], "log") == 0) {
+//             builtin_log(args);
+//         } else if (strcmp(args[0], "hop") == 0) {
+//             builtin_hop(args);
+//         }
+        
+//         exit(0);
+//     }
+    
+//     return pid;
+// }
+
+// int execute_builtin_with_redirection(const char *builtin_name, char **args, char *input_file, char *output_file, int append_output) {
+//     int input_fd = STDIN_FILENO;
+//     int output_fd = STDOUT_FILENO;
+//     int saved_stdout = -1;
+//     int saved_stdin = -1;
+    
+//     if (input_file) {
+//         input_fd = open(input_file, O_RDONLY);
+//         if (input_fd == -1) {
+//             perror(input_file);
+//             return -1;
+//         }
+//         saved_stdin = dup(STDIN_FILENO);
+//         if (dup2(input_fd, STDIN_FILENO) == -1) {
+//             perror("dup2");
+//             close(input_fd);
+//             if (saved_stdin != -1) {
+//                 close(saved_stdin);
+//             }
+//             return -1;
+//         }
+//     }
+    
+//     if (output_file) {
+//         int flags = O_WRONLY | O_CREAT;
+//         flags |= append_output ? O_APPEND : O_TRUNC;
+//         output_fd = open(output_file, flags, 0644);
+//         if (output_fd == -1) {
+//             printf("Unable to create file for writing\n");
+//             if (input_fd != STDIN_FILENO) {
+//                 close(input_fd);
+//                 if (saved_stdin != -1) {
+//                     dup2(saved_stdin, STDIN_FILENO);
+//                     close(saved_stdin);
+//                 }
+//             }
+//             return -1;
+//         }
+//         saved_stdout = dup(STDOUT_FILENO);
+//         dup2(output_fd, STDOUT_FILENO);
+//     }
+    
+//     if (strcmp(builtin_name, "reveal") == 0) {
+//         builtin_reveal(args);
+//     } else if (strcmp(builtin_name, "log") == 0) {
+//         builtin_log(args);
+//     } else if (strcmp(builtin_name, "hop") == 0) {
+//         builtin_hop(args);
+//     }
+    
+//     // Ensure output is flushed before restoring file descriptors
+//     if (saved_stdout != -1) {
+//         fflush(stdout);
+//     }
+    
+//     if (saved_stdout != -1) {
+//         dup2(saved_stdout, STDOUT_FILENO);
+//         close(saved_stdout);
+//         close(output_fd);
+//     }
+//     if (saved_stdin != -1) {
+//         dup2(saved_stdin, STDIN_FILENO);
+//         close(saved_stdin);
+//         close(input_fd);
+//     }
+    
+//     return 0;
+// }
+
+// // int execute_single_command(char **args, char *input_file, char *output_file, int append_output) {
+// //     if (!args || !args[0]) return -1;
+    
+// //     // Check if it's a builtin command
+// //     if (is_builtin_command(args[0])) {
+// //         return execute_builtin_with_redirection(args[0], args, input_file, output_file, append_output);
+// //     }
+    
+// //     // External command
+// //     int input_fd = STDIN_FILENO;
+// //     int output_fd = STDOUT_FILENO;
+    
+// //     if (input_file) {
+// //         input_fd = open(input_file, O_RDONLY);
+// //         if (input_fd == -1) {
+// //             perror(input_file);
+// //             return -1;
+// //         }
+// //     }
+    
+// //     if (output_file) {
+// //         int flags = O_WRONLY | O_CREAT;
+// //         flags |= append_output ? O_APPEND : O_TRUNC;
+// //         output_fd = open(output_file, flags, 0644);
+// //         if (output_fd == -1) {
+// //             printf("Unable to create file for writing\n");
+// //             if (input_fd != STDIN_FILENO) close(input_fd);
+// //             return -1;
+// //         }
+// //     }
+    
+// //     pid_t pid = create_process(args, input_fd, output_fd, NULL, 0);
+    
+// //     if (input_fd != STDIN_FILENO) close(input_fd);
+// //     if (output_fd != STDOUT_FILENO) close(output_fd);
+    
+// //     // Wait for the child process
+// //     int status;
+// //     waitpid(pid, &status, WUNTRACED);
+    
+// //     return WEXITSTATUS(status);
+// // }
+
+// // ... existing code ...
+
+// int execute_single_command(char **args, char *input_file, char *output_file, int append_output) {
+//     if (!args || !args[0]) return -1;
+    
+//     // Check if it's a builtin command
+//     if (is_builtin_command(args[0])) {
+//         return execute_builtin_with_redirection(args[0], args, input_file, output_file, append_output);
+//     }
+    
+//     // External command
+//     int input_fd = STDIN_FILENO;
+//     int output_fd = STDOUT_FILENO;
+    
+//     if (input_file) {
+//         input_fd = open(input_file, O_RDONLY);
+//         if (input_fd == -1) {
+//             perror(input_file);
+//             return -1;
+//         }
+//     }
+    
+//     if (output_file) {
+//         int flags = O_WRONLY | O_CREAT;
+//         flags |= append_output ? O_APPEND : O_TRUNC;
+//         output_fd = open(output_file, flags, 0644);
+//         if (output_fd == -1) {
+//             printf("Unable to create file for writing\n");
+//             if (input_fd != STDIN_FILENO) close(input_fd);
+//             return -1;
+//         }
+//     }
+    
+//     pid_t pid = fork();
+    
+//     if (pid == 0) {
+//         // Child process
+//         setpgid(0, 0);  // Create new process group
+        
+//         if (input_fd != STDIN_FILENO) {
+//             dup2(input_fd, STDIN_FILENO);
+//             close(input_fd);
+//         }
+        
+//         if (output_fd != STDOUT_FILENO) {
+//             dup2(output_fd, STDOUT_FILENO);
+//             close(output_fd);
+//         }
+        
+//         execvp(args[0], args);
+//         // If execvp returns, the command could not be executed
+//         fprintf(stderr, "Command not found!\n");
+//         _exit(127);
+//     } else if (pid > 0) {
+//         // Parent process
+//         if (input_fd != STDIN_FILENO) close(input_fd);
+//         if (output_fd != STDOUT_FILENO) close(output_fd);
+        
+//         // Set as foreground process group
+//         set_foreground_process_group(pid);
+        
+//         // Wait for the child process
+//         int status;
+//         waitpid(pid, &status, WUNTRACED);
+        
+//         // Reset foreground process group
+//         reset_foreground_process_group();
+        
+//         return WEXITSTATUS(status);
+//     } else {
+//         perror("fork");
+//         if (input_fd != STDIN_FILENO) close(input_fd);
+//         if (output_fd != STDOUT_FILENO) close(output_fd);
+//         return -1;
+//     }
+// }
+
 #include "shell.h"
 #include "builtins.h"
 #include "input.h"
@@ -172,16 +435,68 @@ int execute_single_command(char **args, char *input_file, char *output_file, int
         }
     }
     
-    pid_t pid = create_process(args, input_fd, output_fd, NULL, 0);
+    pid_t pid = fork();
     
-    if (input_fd != STDIN_FILENO) close(input_fd);
-    if (output_fd != STDOUT_FILENO) close(output_fd);
-    
-    // Wait for the child process
-    int status;
-    waitpid(pid, &status, WUNTRACED);
-    
-    return WEXITSTATUS(status);
+    if (pid == 0) {
+        // Child process - like reference implementation
+        signal(SIGTSTP, SIG_DFL);  // Reset SIGTSTP to default in child
+        
+        if (input_fd != STDIN_FILENO) {
+            dup2(input_fd, STDIN_FILENO);
+            close(input_fd);
+        }
+        
+        if (output_fd != STDOUT_FILENO) {
+            dup2(output_fd, STDOUT_FILENO);
+            close(output_fd);
+        }
+        
+        execvp(args[0], args);
+        // If execvp returns, the command could not be executed
+        printf("Command not found!\n");
+        exit(0);
+    } else if (pid > 0) {
+        // Parent process - following reference implementation pattern
+        if (input_fd != STDIN_FILENO) close(input_fd);
+        if (output_fd != STDOUT_FILENO) close(output_fd);
+        
+        // Set process group like reference implementation
+        setpgid(pid, 0);
+        
+        // Ignore SIGTTOU before terminal control operations
+        signal(SIGTTOU, SIG_IGN);
+        
+        // Set foreground process group to the child process
+        tcsetpgrp(STDIN_FILENO, pid);
+        
+        // Wait for the child process
+        int status;
+        waitpid(pid, &status, WUNTRACED);
+        
+        // Reset terminal control back to shell
+        tcsetpgrp(STDIN_FILENO, getpgrp());
+        
+        // Handle stopped processes (Ctrl-Z)
+        if (WIFSTOPPED(status)) {
+            // Add to background jobs
+            add_background_job(pid, pid, args[0]);
+            // Find the job that was just added
+            for (int i = 0; i < MAX_BACKGROUND_JOBS; i++) {
+                if (background_jobs[i].active && background_jobs[i].pid == pid) {
+                    background_jobs[i].status = JOB_STOPPED;
+                    printf("[%d] Stopped %s\n", background_jobs[i].job_id, args[0]);
+                    break;
+                }
+            }
+        }
+        
+        return WEXITSTATUS(status);
+    } else {
+        perror("fork");
+        if (input_fd != STDIN_FILENO) close(input_fd);
+        if (output_fd != STDOUT_FILENO) close(output_fd);
+        return -1;
+    }
 }
 
 int execute_pipeline(char ***commands, int command_count, char *input_file, char *output_file, int append_output) {

@@ -3,8 +3,10 @@
 
 #include "shell.h"
 
-// Ping command function
+// Function to send signals to processes
 void builtin_ping(char **args);
 
-#endif
+// Helper function to validate numeric input
+int is_valid_number(const char *str);
 
+#endif

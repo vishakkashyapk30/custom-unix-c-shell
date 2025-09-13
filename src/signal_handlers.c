@@ -2,7 +2,7 @@
 #define _POSIX_C_SOURCE 200809L
 
 #include "signal_handlers.h"
-#include "jobs.h"
+#include "fg_bg.h"
 #include <sys/wait.h>
 #include <termios.h>
 #include <errno.h>
@@ -10,128 +10,48 @@
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
-
-// Global variable definition
-pid_t foreground_pgid = 0;
+#include <unistd.h>
 
 void setup_signal_handlers(void) {
-    struct sigaction sa_int, sa_tstp, sa_chld;
+    struct sigaction sa;
     
-    // Set up SIGINT handler (Ctrl-C)
-    sa_int.sa_handler = sigint_handler;
-    sigemptyset(&sa_int.sa_mask);
-    sa_int.sa_flags = SA_RESTART;
-    if (sigaction(SIGINT, &sa_int, NULL) == -1) {
-        perror("sigaction SIGINT");
+    // Handle SIGINT
+    sa.sa_handler = sigint_handler;
+    sigemptyset(&sa.sa_mask);
+    sa.sa_flags = 0;
+    if (sigaction(SIGINT, &sa, NULL) == -1) {
+        perror("Error setting up SIGINT handler");
+        exit(EXIT_FAILURE);
     }
-    
-    // Set up SIGTSTP handler (Ctrl-Z)
-    sa_tstp.sa_handler = sigtstp_handler;
-    sigemptyset(&sa_tstp.sa_mask);
-    sa_tstp.sa_flags = SA_RESTART;
-    if (sigaction(SIGTSTP, &sa_tstp, NULL) == -1) {
-        perror("sigaction SIGTSTP");
+
+    // Handle SIGTSTP  
+    sa.sa_handler = sigtstp_handler;
+    sigemptyset(&sa.sa_mask);
+    sa.sa_flags = 0;
+    if (sigaction(SIGTSTP, &sa, NULL) == -1) {
+        perror("Error setting up SIGTSTP handler");
+        exit(EXIT_FAILURE);
     }
     
     // Set up SIGCHLD handler
-    sa_chld.sa_handler = sigchld_handler;
-    sigemptyset(&sa_chld.sa_mask);
-    sa_chld.sa_flags = SA_RESTART | SA_NOCLDSTOP;
-    if (sigaction(SIGCHLD, &sa_chld, NULL) == -1) {
+    sa.sa_handler = sigchld_handler;
+    sigemptyset(&sa.sa_mask);
+    sa.sa_flags = SA_RESTART;
+    if (sigaction(SIGCHLD, &sa, NULL) == -1) {
         perror("sigaction SIGCHLD");
     }
 }
 
-// ...existing code...
-
 void sigint_handler(int sig) {
-    (void)sig;  // Suppress unused parameter warning
-    
+    (void)sig;
     if (foreground_pgid > 0) {
-        // Send SIGINT to foreground process group
-        if (kill(-foreground_pgid, SIGINT) == -1) {
-            if (errno != ESRCH) {
-                perror("kill SIGINT");
-            }
-        }
-    }
-    
-    // Print newline but don't terminate shell
-    if (write(STDOUT_FILENO, "\n", 1) == -1) {
-        perror("write");
+        kill(foreground_pgid, SIGKILL);
     }
 }
 
 void sigtstp_handler(int sig) {
-    (void)sig;  // Suppress unused parameter warning
-    
-    if (foreground_pgid > 0) {
-        pid_t fg_pid = foreground_pgid;
-        
-        // Send SIGTSTP to foreground process group
-        if (kill(-foreground_pgid, SIGTSTP) == -1) {
-            if (errno != ESRCH) {
-                perror("kill SIGTSTP");
-            }
-            return;
-        }
-        
-        // Wait for process to stop
-        int status;
-        pid_t result = waitpid(-fg_pid, &status, WUNTRACED);
-        
-        if (result > 0 && WIFSTOPPED(status)) {
-            // Get command name
-            char command_name[256] = "unknown";
-            char cmdline_path[512];
-            snprintf(cmdline_path, sizeof(cmdline_path), "/proc/%d/comm", fg_pid);
-            
-            FILE *comm_file = fopen(cmdline_path, "r");
-            if (comm_file) {
-                if (fgets(command_name, sizeof(command_name), comm_file)) {
-                    // Remove newline
-                    command_name[strcspn(command_name, "\n")] = '\0';
-                }
-                fclose(comm_file);
-            }
-            
-            // Find or add job
-            int job_index = -1;
-            int job_id = 1;
-            
-            // Look for existing job
-            for (int i = 0; i < MAX_BACKGROUND_JOBS; i++) {
-                if (background_jobs[i].active && 
-                    (background_jobs[i].pgid == fg_pid || background_jobs[i].pid == fg_pid)) {
-                    job_index = i;
-                    job_id = background_jobs[i].job_id;
-                    break;
-                }
-            }
-            
-            // If not found, add new job
-            if (job_index == -1) {
-                job_index = add_background_job(fg_pid, fg_pid, command_name);
-                if (job_index >= 0) {
-                    job_id = background_jobs[job_index].job_id;
-                }
-            }
-            
-            // Update job status
-            if (job_index >= 0) {
-                background_jobs[job_index].status = JOB_STOPPED;
-                printf("\n[%d] Stopped %s\n", job_id, command_name);
-                fflush(stdout);
-            }
-        }
-        
-        foreground_pgid = 0;  // Clear foreground process
-    }
-    
-    // Print newline for prompt
-    if (write(STDOUT_FILENO, "\n", 1) == -1) {
-        perror("write");
-    }
+    (void)sig;
+    // Handle Ctrl-Z - this will be handled in execute_single_command via WUNTRACED
 }
 
 void sigchld_handler(int sig) {
@@ -141,7 +61,7 @@ void sigchld_handler(int sig) {
     int status;
     
     // Reap all available children
-    while ((pid = waitpid(-1, &status, WNOHANG | WUNTRACED | WCONTINUED)) > 0) {
+    while ((pid = waitpid(-1, &status, WNOHANG)) > 0) {
         // Find the job
         for (int i = 0; i < MAX_BACKGROUND_JOBS; i++) {
             if (background_jobs[i].active && background_jobs[i].pid == pid) {
@@ -161,32 +81,12 @@ void sigchld_handler(int sig) {
                     }
                     fflush(stdout);
                     
-                    background_jobs[i].status = JOB_DONE;
-                } else if (WIFSTOPPED(status)) {
-                    // Job stopped
-                    background_jobs[i].status = JOB_STOPPED;
-                } else if (WIFCONTINUED(status)) {
-                    // Job continued
-                    background_jobs[i].status = JOB_RUNNING;
+                    background_jobs[i].active = 0; // Mark as inactive
                 }
                 break;
             }
         }
     }
-}
-
-void ignore_terminal_signals(void) {
-    signal(SIGINT, SIG_IGN);
-    signal(SIGTSTP, SIG_IGN);
-    signal(SIGTTOU, SIG_IGN);
-    signal(SIGTTIN, SIG_IGN);
-}
-
-void restore_terminal_signals(void) {
-    signal(SIGINT, SIG_DFL);
-    signal(SIGTSTP, SIG_DFL);
-    signal(SIGTTOU, SIG_DFL);
-    signal(SIGTTIN, SIG_DFL);
 }
 
 void handle_eof(void) {
@@ -205,15 +105,22 @@ void handle_eof(void) {
 }
 
 void set_foreground_process_group(pid_t pgid) {
-    foreground_pgid = pgid;
+    // Ignore SIGTTOU to avoid being stopped when changing terminal process group
+    signal(SIGTTOU, SIG_IGN);
+    
+    // Set the foreground process group
     if (tcsetpgrp(STDIN_FILENO, pgid) == -1) {
         perror("tcsetpgrp");
     }
+    
+    foreground_pgid = pgid;
 }
 
 void reset_foreground_process_group(void) {
-    foreground_pgid = 0;
+    // Reset the foreground process group back to the shell
     if (tcsetpgrp(STDIN_FILENO, getpgrp()) == -1) {
         perror("tcsetpgrp");
     }
+    
+    foreground_pgid = 0;
 }

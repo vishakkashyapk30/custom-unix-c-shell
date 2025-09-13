@@ -106,31 +106,31 @@ void wait_for_background_jobs(void) {
     }
 }
 
-void set_foreground_process_group(pid_t pgid) {
-    foreground_pgid = pgid;
-    // Only try to set process group if we're in a terminal
-    if (isatty(STDIN_FILENO)) {
-        if (tcsetpgrp(STDIN_FILENO, pgid) == -1) {
-            // Don't print error for non-terminal cases
-            if (errno != ENOTTY) {
-                perror("tcsetpgrp");
-            }
-        }
-    }
-}
+// void set_foreground_process_group(pid_t pgid) {
+//     foreground_pgid = pgid;
+//     // Only try to set process group if we're in a terminal
+//     if (isatty(STDIN_FILENO)) {
+//         if (tcsetpgrp(STDIN_FILENO, pgid) == -1) {
+//             // Don't print error for non-terminal cases
+//             if (errno != ENOTTY) {
+//                 perror("tcsetpgrp");
+//             }
+//         }
+//     }
+// }
 
-void reset_foreground_process_group(void) {
-    // Only try to reset process group if we're in a terminal
-    if (isatty(STDIN_FILENO)) {
-        if (tcsetpgrp(STDIN_FILENO, getpgrp()) == -1) {
-            // Don't print error for non-terminal cases
-            if (errno != ENOTTY) {
-                perror("tcsetpgrp");
-            }
-        }
-    }
-    foreground_pgid = 0;
-}
+// void reset_foreground_process_group(void) {
+//     // Only try to reset process group if we're in a terminal
+//     if (isatty(STDIN_FILENO)) {
+//         if (tcsetpgrp(STDIN_FILENO, getpgrp()) == -1) {
+//             // Don't print error for non-terminal cases
+//             if (errno != ENOTTY) {
+//                 perror("tcsetpgrp");
+//             }
+//         }
+//     }
+//     foreground_pgid = 0;
+// }
 
 void builtin_fg(char **args) {
     int job_index;

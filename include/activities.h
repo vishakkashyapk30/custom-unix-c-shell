@@ -3,8 +3,7 @@
 
 #include "shell.h"
 
-// Activities command function
+// Function to display all running/stopped processes
 void builtin_activities(char **args);
 
 #endif
-

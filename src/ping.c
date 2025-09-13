@@ -1,6 +1,22 @@
 #include "ping.h"
 #include "shell.h"
 #include <errno.h>
+#include <ctype.h>
+
+// Helper function to check if string is a valid number
+int is_valid_number(const char *str) {
+    if (!str || *str == '\0') return 0;
+    
+    // Handle negative numbers
+    if (*str == '-') str++;
+    
+    // Check if all remaining characters are digits
+    while (*str) {
+        if (!isdigit(*str)) return 0;
+        str++;
+    }
+    return 1;
+}
 
 void builtin_ping(char **args) {
     // Check if we have the required arguments
@@ -9,35 +25,21 @@ void builtin_ping(char **args) {
         return;
     }
     
-    // Parse PID
-    char *pid_str = args[1];
-    int pid = atoi(pid_str);
-    
-    // Validate PID (check if it's a valid number)
-    if (pid == 0 && strcmp(pid_str, "0") != 0) {
+    // Validate PID
+    if (!is_valid_number(args[1])) {
         printf("Invalid syntax!\n");
         return;
     }
     
-    // Parse signal number
-    char *signal_str = args[2];
-    int signal_num = atoi(signal_str);
-    
-    // Validate signal number (check if it's a valid number)
-    if (signal_num == 0 && strcmp(signal_str, "0") != 0) {
+    // Validate signal number
+    if (!is_valid_number(args[2])) {
         printf("Invalid syntax!\n");
         return;
     }
     
-    // Check if process exists by sending signal 0
-    if (kill(pid, 0) == -1) {
-        if (errno == ESRCH) {
-            printf("No such process found\n");
-        } else {
-            printf("No such process found\n");
-        }
-        return;
-    }
+    // Parse PID and signal number
+    int pid = atoi(args[1]);
+    int signal_num = atoi(args[2]);
     
     // Apply modulo 32 to signal number
     int actual_signal = signal_num % 32;
@@ -52,7 +54,6 @@ void builtin_ping(char **args) {
         return;
     }
     
-    // Success message
-    printf("Sent signal %d to process with pid %d\n", actual_signal, pid);
+    // Success message - use original signal number, not modulo
+    printf("Sent signal %d to process with pid %d\n", signal_num, pid);
 }
-
