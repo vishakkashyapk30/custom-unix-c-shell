@@ -2,6 +2,7 @@
 #include "parser.h"
 #include "builtins.h"
 #include "fg_bg.h"
+#include <errno.h>
 
 char *read_input(void) {
     char *input = malloc(MAX_INPUT_SIZE);
@@ -10,9 +11,23 @@ char *read_input(void) {
         return NULL;
     }
     
-    if (fgets(input, MAX_INPUT_SIZE, stdin) == NULL) {
-        free(input);
-        return NULL;
+    while (1) {
+        if (fgets(input, MAX_INPUT_SIZE, stdin) == NULL) {
+            if (feof(stdin)) {
+                // True EOF (Ctrl+D)
+                free(input);
+                return NULL;
+            } else if (errno == EINTR) {
+                // Interrupted by signal, try again
+                clearerr(stdin);
+                continue;
+            } else {
+                // Other error
+                free(input);
+                return NULL;
+            }
+        }
+        break;
     }
     
     // Remove newline

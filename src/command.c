@@ -468,6 +468,7 @@ int execute_single_command(char **args, char *input_file, char *output_file, int
         
         // Set foreground process group to the child process
         tcsetpgrp(STDIN_FILENO, pid);
+        foreground_pgid = pid;
         
         // Wait for the child process
         int status;
@@ -475,6 +476,7 @@ int execute_single_command(char **args, char *input_file, char *output_file, int
         
         // Reset terminal control back to shell
         tcsetpgrp(STDIN_FILENO, getpgrp());
+        foreground_pgid = 0;
         
         // Handle stopped processes (Ctrl-Z)
         if (WIFSTOPPED(status)) {
@@ -485,9 +487,11 @@ int execute_single_command(char **args, char *input_file, char *output_file, int
                 if (background_jobs[i].active && background_jobs[i].pid == pid) {
                     background_jobs[i].status = JOB_STOPPED;
                     printf("[%d] Stopped %s\n", background_jobs[i].job_id, args[0]);
+                    fflush(stdout);
                     break;
                 }
             }
+            return 0; // Return 0 for stopped processes
         }
         
         return WEXITSTATUS(status);

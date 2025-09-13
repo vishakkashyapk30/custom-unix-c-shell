@@ -3,6 +3,7 @@
 
 #include "signal_handlers.h"
 #include "fg_bg.h"
+#include "prompt.h"
 #include <sys/wait.h>
 #include <termios.h>
 #include <errno.h>
@@ -12,11 +13,12 @@
 #include <stdlib.h>
 #include <unistd.h>
 
+
 void setup_signal_handlers(void) {
     struct sigaction sa;
     
     // Handle SIGINT
-    sa.sa_handler = sigint_handler;
+    sa.sa_handler = signal_handler;
     sigemptyset(&sa.sa_mask);
     sa.sa_flags = 0;
     if (sigaction(SIGINT, &sa, NULL) == -1) {
@@ -25,7 +27,7 @@ void setup_signal_handlers(void) {
     }
 
     // Handle SIGTSTP  
-    sa.sa_handler = sigtstp_handler;
+    sa.sa_handler = signal_handler;
     sigemptyset(&sa.sa_mask);
     sa.sa_flags = 0;
     if (sigaction(SIGTSTP, &sa, NULL) == -1) {
@@ -36,26 +38,22 @@ void setup_signal_handlers(void) {
     // Set up SIGCHLD handler
     sa.sa_handler = sigchld_handler;
     sigemptyset(&sa.sa_mask);
-    sa.sa_flags = SA_RESTART;
+    sa.sa_flags = SA_RESTART | SA_NOCLDSTOP;
     if (sigaction(SIGCHLD, &sa, NULL) == -1) {
         perror("sigaction SIGCHLD");
     }
 }
 
-void sigint_handler(int sig) {
-    (void)sig;
-    if (foreground_pgid > 0) {
+void signal_handler(int signum) {
+    if (signum == SIGINT && foreground_pgid > 0) {
         kill(foreground_pgid, SIGKILL);
     }
-}
-
-void sigtstp_handler(int sig) {
-    (void)sig;
-    // Handle Ctrl-Z - this will be handled in execute_single_command via WUNTRACED
+    // For SIGTSTP, we don't need to do anything here - the child process will handle it
 }
 
 void sigchld_handler(int sig) {
     (void)sig;  // Suppress unused parameter warning
+    int saved_errno = errno;
     
     pid_t pid;
     int status;
@@ -75,11 +73,14 @@ void sigchld_handler(int sig) {
                     if (!command_name) command_name = background_jobs[i].command;
                     
                     if (WIFEXITED(status) && WEXITSTATUS(status) == 0) {
-                        printf("%s with pid %d exited normally\n", command_name, pid);
+                        printf("\n%s with pid %d exited normally\n", command_name, pid);
                     } else {
-                        printf("%s with pid %d exited abnormally\n", command_name, pid);
+                        printf("\n%s with pid %d exited abnormally\n", command_name, pid);
                     }
                     fflush(stdout);
+                    
+                    // Redisplay prompt after the message
+                    display_prompt();
                     
                     background_jobs[i].active = 0; // Mark as inactive
                 }
@@ -87,6 +88,8 @@ void sigchld_handler(int sig) {
             }
         }
     }
+    
+    errno = saved_errno;
 }
 
 void handle_eof(void) {
