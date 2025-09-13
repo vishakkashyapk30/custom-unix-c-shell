@@ -375,7 +375,11 @@ void builtin_log(char **args) {
         
         // Parse and execute the command without adding to history
         char *command_to_execute = strdup(command_history[actual_index]);
-        printf("Executing: %s\n", command_to_execute);
+        
+        // Only print "Executing:" message if output is not redirected/piped
+        if (!is_output_redirected_or_piped()) {
+            printf("Executing: %s\n", command_to_execute);
+        }
         
         // Parse the command
         ParsedCommand parsed;
