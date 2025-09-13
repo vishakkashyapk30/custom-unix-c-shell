@@ -56,7 +56,11 @@ void handle_input(char *input) {
     }
     
     int parse_result = parse_command(input, &parsed);
-    if (parse_result != 0) {
+    if (parse_result == -3) {
+        // Output redirection failed
+        printf("Unable to create file for writing\n");
+        return;
+    } else if (parse_result != 0) {
         if (parse_result == -2) {
             printf("No such file or directory\n");
         } else {

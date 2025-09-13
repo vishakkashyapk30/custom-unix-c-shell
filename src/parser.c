@@ -131,7 +131,7 @@ char **tokenize_command(char *command) {
 
 int parse_command(char *input, ParsedCommand *parsed) {
     memset(parsed, 0, sizeof(ParsedCommand));
-    int out_fail=0;
+    
     char *input_copy = strdup(input);
     trim_whitespace(input_copy);
     
@@ -176,6 +176,9 @@ int parse_command(char *input, ParsedCommand *parsed) {
         pipe_token = strtok(NULL, "|");
     }
     free(input_working);
+    
+    // Track output redirection failure
+    int output_redirect_failed = 0;
     
     // Now process each pipe part for redirections
     for (int i = 0; i < pipe_count; i++) {
@@ -223,6 +226,12 @@ int parse_command(char *input, ParsedCommand *parsed) {
                         if (input_redir) free(input_redir);
                         if (output_redir) free(output_redir);
                         free(temp);
+                        free(cmd_copy);
+                        for (int k = 0; k < pipe_count; k++) {
+                            free(pipe_parts[k]);
+                        }
+                        free(pipe_parts);
+                        free(input_copy);
                         return -2; // Special error code for file not found
                     }
                     close(fd);
@@ -243,16 +252,18 @@ int parse_command(char *input, ParsedCommand *parsed) {
                     }
                     char* temp = strdup(tokens[j + 1]);
                     int fd = open(temp, O_WRONLY | O_CREAT | O_TRUNC, 0644);
-                    if (out_fail == 0) {
-                        output_redir = temp;
-                        append = 0;
-                    } else {
-                        free(temp);
-                    }
                     if (fd == -1) {
-                        out_fail = 1;
+                        // Output redirection failed - set flag but continue parsing
+                        output_redirect_failed = 1;
+                        free(temp);
                     } else {
                         close(fd);
+                        if (!output_redirect_failed) {
+                            output_redir = temp;
+                            append = 0;
+                        } else {
+                            free(temp);
+                        }
                     }
                     j++; // Skip the filename token
                 }
@@ -265,16 +276,18 @@ int parse_command(char *input, ParsedCommand *parsed) {
                     }
                     char* temp = strdup(tokens[j + 1]);
                     int fd = open(temp, O_WRONLY | O_CREAT | O_APPEND, 0644);
-                    if (out_fail == 0) {
-                        output_redir = temp;
-                        append = 1;
-                    } else {
-                        free(temp);
-                    }
                     if (fd == -1) {
-                        out_fail = 1;
+                        // Output redirection failed - set flag but continue parsing
+                        output_redirect_failed = 1;
+                        free(temp);
                     } else {
                         close(fd);
+                        if (!output_redirect_failed) {
+                            output_redir = temp;
+                            append = 1;
+                        } else {
+                            free(temp);
+                        }
                     }
                     j++; // Skip the filename token
                 }
@@ -324,6 +337,11 @@ int parse_command(char *input, ParsedCommand *parsed) {
     parsed->command_count = pipe_count;
     free(pipe_parts);
     free(input_copy);
+    
+    // Check if output redirection failed
+    if (output_redirect_failed) {
+        return -3; // Special error code for output redirection failure
+    }
     
     return 0;
 }
@@ -379,8 +397,19 @@ int execute_sequential_commands(char *input) {
     // Execute each command sequentially
     for (int i = 0; i < semicolon_count; i++) {
         ParsedCommand parsed;
-        if (parse_command(semicolon_parts[i], &parsed) != 0) {
-            printf("Invalid Syntax!\n");
+        int parse_result = parse_command(semicolon_parts[i], &parsed);
+        if (parse_result == -3) {
+            // Output redirection failed
+            printf("Unable to create file for writing\n");
+            free_parsed_command(&parsed);
+            free(semicolon_parts[i]);
+            continue;
+        } else if (parse_result != 0) {
+            if (parse_result == -2) {
+                printf("No such file or directory\n");
+            } else {
+                printf("Invalid Syntax!\n");
+            }
             free(semicolon_parts[i]);
             continue;
         }
