@@ -32,6 +32,95 @@ void trim_whitespace(char *str) {
     }
 }
 
+// Enhanced tokenizer that handles redirection operators properly
+char **tokenize_with_redirections(char *command, int *token_count) {
+    char **tokens = malloc(MAX_ARGS * sizeof(char*));
+    if (!tokens) return NULL;
+    
+    *token_count = 0;
+    int i = 0;
+    int len = strlen(command);
+    
+    while (i < len && *token_count < MAX_ARGS - 1) {
+        // Skip whitespace
+        while (i < len && isspace(command[i])) i++;
+        if (i >= len) break;
+        
+        // Check for redirection operators
+        if (command[i] == '<') {
+            tokens[(*token_count)++] = strdup("<");
+            i++;
+            // Skip whitespace after <
+            while (i < len && isspace(command[i])) i++;
+            // Extract filename if it's concatenated
+            if (i < len && !isspace(command[i]) && command[i] != '|' && 
+                command[i] != '&' && command[i] != ';' && command[i] != '<' && command[i] != '>') {
+                int start = i;
+                while (i < len && !isspace(command[i]) && command[i] != '|' && 
+                       command[i] != '&' && command[i] != ';' && command[i] != '<' && command[i] != '>') {
+                    i++;
+                }
+                char *filename = malloc(i - start + 1);
+                strncpy(filename, command + start, i - start);
+                filename[i - start] = '\0';
+                tokens[(*token_count)++] = filename;
+            }
+        } else if (command[i] == '>' && i + 1 < len && command[i + 1] == '>') {
+            tokens[(*token_count)++] = strdup(">>");
+            i += 2;
+            // Skip whitespace after >>
+            while (i < len && isspace(command[i])) i++;
+            // Extract filename if it's concatenated
+            if (i < len && !isspace(command[i]) && command[i] != '|' && 
+                command[i] != '&' && command[i] != ';' && command[i] != '<' && command[i] != '>') {
+                int start = i;
+                while (i < len && !isspace(command[i]) && command[i] != '|' && 
+                       command[i] != '&' && command[i] != ';' && command[i] != '<' && command[i] != '>') {
+                    i++;
+                }
+                char *filename = malloc(i - start + 1);
+                strncpy(filename, command + start, i - start);
+                filename[i - start] = '\0';
+                tokens[(*token_count)++] = filename;
+            }
+        } else if (command[i] == '>') {
+            tokens[(*token_count)++] = strdup(">");
+            i++;
+            // Skip whitespace after >
+            while (i < len && isspace(command[i])) i++;
+            // Extract filename if it's concatenated
+            if (i < len && !isspace(command[i]) && command[i] != '|' && 
+                command[i] != '&' && command[i] != ';' && command[i] != '<' && command[i] != '>') {
+                int start = i;
+                while (i < len && !isspace(command[i]) && command[i] != '|' && 
+                       command[i] != '&' && command[i] != ';' && command[i] != '<' && command[i] != '>') {
+                    i++;
+                }
+                char *filename = malloc(i - start + 1);
+                strncpy(filename, command + start, i - start);
+                filename[i - start] = '\0';
+                tokens[(*token_count)++] = filename;
+            }
+        } else {
+            // Regular token - extract until whitespace or special character
+            int start = i;
+            while (i < len && !isspace(command[i]) && command[i] != '|' && 
+                   command[i] != '&' && command[i] != ';' && command[i] != '<' && command[i] != '>') {
+                i++;
+            }
+            if (i > start) {
+                char *token = malloc(i - start + 1);
+                strncpy(token, command + start, i - start);
+                token[i - start] = '\0';
+                tokens[(*token_count)++] = token;
+            }
+        }
+    }
+    
+    tokens[*token_count] = NULL;
+    return tokens;
+}
+
 int is_valid_syntax(char *input) {
     if (!input || strlen(input) == 0) return 1;
     
@@ -187,19 +276,9 @@ int parse_command(char *input, ParsedCommand *parsed) {
         char *input_redir = NULL, *output_redir = NULL;
         int append = 0;
         
-        // Parse redirections for this command using tokenization approach
-        char *cmd_copy = strdup(cmd_part);
-        char **tokens = malloc(MAX_ARGS * sizeof(char*));
-        int token_count = 0;
-        
-        // Tokenize the command
-        char *token = strtok(cmd_copy, " \t\n\r");
-        while (token != NULL && token_count < MAX_ARGS - 1) {
-            tokens[token_count] = strdup(token);
-            token_count++;
-            token = strtok(NULL, " \t\n\r");
-        }
-        tokens[token_count] = NULL;
+        // Parse redirections for this command using enhanced tokenization
+        int token_count;
+        char **tokens = tokenize_with_redirections(cmd_part, &token_count);
         
         // Parse redirections from tokens
         char **clean_tokens = malloc(MAX_ARGS * sizeof(char*));
@@ -227,7 +306,6 @@ int parse_command(char *input, ParsedCommand *parsed) {
                         if (input_redir) free(input_redir);
                         if (output_redir) free(output_redir);
                         free(temp);
-                        free(cmd_copy);
                         for (int k = 0; k < pipe_count; k++) {
                             free(pipe_parts[k]);
                         }
@@ -308,8 +386,7 @@ int parse_command(char *input, ParsedCommand *parsed) {
         free(tokens);
         
         // Reconstruct clean command
-        free(cmd_copy);
-        cmd_copy = malloc(MAX_INPUT_SIZE);
+        char *cmd_copy = malloc(MAX_INPUT_SIZE);
         cmd_copy[0] = '\0';
         
         for (int j = 0; j < clean_count; j++) {
