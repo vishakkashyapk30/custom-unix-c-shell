@@ -269,6 +269,7 @@
 #include <fcntl.h>
 #include <sys/wait.h>
 
+// LLM Code begins
 pid_t create_process(char **args, int input_fd, int output_fd, int pipe_fds[][2], int num_pipes) {
     pid_t pid = fork();
     
@@ -799,3 +800,4 @@ void execute_background_pipeline(char ***commands, int command_count, char *inpu
 void check_background_jobs(void) {
     cleanup_finished_jobs();
 }
+// LLM Code ends

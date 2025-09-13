@@ -5,6 +5,7 @@
 #include <ctype.h>
 #include <sys/stat.h>
 
+// LLM Code begins
 // Log storage - circular buffer
 static char command_history[15][MAX_INPUT_SIZE];  // Max 15 commands
 static int history_count = 0;  // Total commands added
@@ -548,3 +549,4 @@ void load_log_from_file(void) {
     
     fclose(file);
 }
+// LLM Code ends

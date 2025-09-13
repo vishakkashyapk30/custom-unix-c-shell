@@ -1,6 +1,7 @@
 #define _GNU_SOURCE
 #define _POSIX_C_SOURCE 200809L
 
+// LLM Code begins
 #include "signal_handlers.h"
 #include "fg_bg.h"
 #include "prompt.h"
@@ -127,3 +128,4 @@ void reset_foreground_process_group(void) {
     
     foreground_pgid = 0;
 }
+// LLM Code ends

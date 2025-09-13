@@ -6,6 +6,7 @@
 #include "fg_bg.h"
 #include "parser.h"
 
+// LLM Code begins
 // Global variables
 char home_directory[MAX_PATH_SIZE];
 char previous_directory[MAX_PATH_SIZE];
@@ -85,3 +86,4 @@ int main(void) {
     shell_loop();
     return 0;
 }
+// LLM Code ends

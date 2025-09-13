@@ -3,6 +3,7 @@
 #include <errno.h>
 #include <ctype.h>
 
+// LLM Code begins
 // Helper function to check if string is a valid number
 int is_valid_number(const char *str) {
     if (!str || *str == '\0') return 0;
@@ -57,3 +58,4 @@ void builtin_ping(char **args) {
     // Success message - use original signal number, not modulo
     printf("Sent signal %d to process with pid %d\n", signal_num, pid);
 }
+// LLM Code ends

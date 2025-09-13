@@ -4,6 +4,7 @@
 #include "fg_bg.h"
 #include <errno.h>
 
+// LLM Code begins
 char *read_input(void) {
     char *input = malloc(MAX_INPUT_SIZE);
     if (!input) {
@@ -161,3 +162,4 @@ void handle_input(char *input) {
     
     free_parsed_command(&parsed);
 }
+// LLM Code ends

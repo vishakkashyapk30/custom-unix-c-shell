@@ -3,6 +3,7 @@
 #include <termios.h>
 #include <errno.h>
 
+// LLM Code begins
 // Global variables
 BackgroundJob background_jobs[MAX_BACKGROUND_JOBS];
 int next_job_id = 1;
@@ -252,3 +253,4 @@ void builtin_bg(char **args) {
     if (!command_name) command_name = job->command;
     printf("[%d] %s &\n", job->job_id, command_name);
 }
+// LLM Code ends

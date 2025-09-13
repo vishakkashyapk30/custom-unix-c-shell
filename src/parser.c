@@ -3,6 +3,7 @@
 #include "builtins.h"
 #include "input.h"
 
+// LLM Code begins
 void trim_whitespace(char *str) {
     if (!str) return;
     
@@ -494,3 +495,4 @@ int execute_sequential_commands(char *input) {
     free(input_copy);
     return 0;
 }
+// LLM Code ends

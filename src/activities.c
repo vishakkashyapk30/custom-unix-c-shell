@@ -3,6 +3,7 @@
 #include "fg_bg.h"
 #include <sys/stat.h>
 
+// LLM Code begins
 // Structure to hold process information for sorting
 typedef struct {
     int pid;
@@ -59,3 +60,4 @@ void builtin_activities(char **args) {
         printf("[%d] : %s - %s\n", activities[i].pid, activities[i].command, activities[i].state);
     }
 }
+// LLM Code ends

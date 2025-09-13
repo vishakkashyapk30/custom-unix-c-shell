@@ -4,6 +4,7 @@
 #include <pwd.h>
 #include <unistd.h>
 
+// LLM Code begins
 // Global variables for prompt
 char username[256];
 char system_name[256];
@@ -52,3 +53,4 @@ void display_prompt(void) {
     printf("<%s@%s:%s> ", username, system_name, current_display_directory);
     fflush(stdout);
 }
+// LLM Code ends
