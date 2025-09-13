@@ -14,8 +14,41 @@ void initialize_log(void) {
     load_log_from_file();
 }
 
+// void add_to_log(const char *command) {
+//     if (!command || strlen(command) == 0) return;
+    
+//     // Don't add if identical to last command
+//     if (history_count > 0) {
+//         int last_idx = (history_start + (history_count - 1)) % 15;
+//         if (strcmp(command_history[last_idx], command) == 0) {
+//             return;
+//         }
+//     }
+    
+//     // Add to circular buffer
+//     if (history_count < 15) {
+//         // Buffer not full yet
+//         int idx = (history_start + history_count) % 15;
+//         strncpy(command_history[idx], command, MAX_INPUT_SIZE - 1);
+//         command_history[idx][MAX_INPUT_SIZE - 1] = '\0';
+//         history_count++;
+//     } else {
+//         // Buffer full, overwrite oldest
+//         strncpy(command_history[history_start], command, MAX_INPUT_SIZE - 1);
+//         command_history[history_start][MAX_INPUT_SIZE - 1] = '\0';
+//         history_start = (history_start + 1) % 15;
+//     }
+    
+//     save_log_to_file();
+// }
+
 void add_to_log(const char *command) {
     if (!command || strlen(command) == 0) return;
+    
+    // Don't add log commands to history (like in shell_yajat)
+    if (strstr(command, "log") != NULL) {
+        return;
+    }
     
     // Don't add if identical to last command
     if (history_count > 0) {
@@ -349,6 +382,56 @@ void builtin_reveal(char **args) {
     reveal_directory(path, show_hidden, long_format);
 }
 
+// void builtin_log(char **args) {
+//     if (!args[1]) {
+//         // No arguments - print log
+//         print_log();
+//     } else if (strcmp(args[1], "purge") == 0) {
+//         // Purge log
+//         purge_log();
+//     } else if (strcmp(args[1], "execute") == 0) {
+//         // Execute command at index
+//         if (!args[2]) {
+//             printf("Usage: log execute <index>\n");
+//             return;
+//         }
+        
+//         int index = atoi(args[2]);
+//         if (index < 1 || index > history_count) {
+//             printf("Invalid index\n");
+//             return;
+//         }
+        
+//         // Convert to 0-based index (newest to oldest)
+//         // Index 1 = newest, so actual_index = history_count - 1
+//         int actual_index = (history_start + (history_count - index)) % 15;
+        
+//         // Parse and execute the command without adding to history
+//         char *command_to_execute = strdup(command_history[actual_index]);
+        
+//         // Only print "Executing:" message if output is not redirected/piped
+//         if (!is_output_redirected_or_piped()) {
+//             printf("Executing: %s\n", command_to_execute);
+//         }
+        
+//         // Parse the command
+//         ParsedCommand parsed;
+//         if (parse_command(command_to_execute, &parsed) == 0) {
+//             if (parsed.command_count == 1) {
+//                 execute_command_no_history(parsed.commands[0]);
+//             } else if (parsed.command_count > 1) {
+//                 execute_pipeline(parsed.commands, parsed.command_count, 
+//                                parsed.input_file, parsed.output_file, parsed.append_output);
+//             }
+//             free_parsed_command(&parsed);
+//         }
+        
+//         free(command_to_execute);
+//     } else {
+//         printf("Usage: log [purge | execute <index>]\n");
+//     }
+// }
+
 void builtin_log(char **args) {
     if (!args[1]) {
         // No arguments - print log
@@ -369,11 +452,11 @@ void builtin_log(char **args) {
             return;
         }
         
-        // Convert to 0-based index (newest to oldest)
-        // Index 1 = newest, so actual_index = history_count - 1
+        // Convert to 0-based index (like shell_yajat: cmds[cnt-idx])
+        // Index 1 = most recent (history_count-1), index 2 = second most recent (history_count-2)
         int actual_index = (history_start + (history_count - index)) % 15;
         
-        // Parse and execute the command without adding to history
+        // Get the command to execute
         char *command_to_execute = strdup(command_history[actual_index]);
         
         // Only print "Executing:" message if output is not redirected/piped
@@ -381,7 +464,7 @@ void builtin_log(char **args) {
             printf("Executing: %s\n", command_to_execute);
         }
         
-        // Parse the command
+        // Parse and execute the command without adding to history
         ParsedCommand parsed;
         if (parse_command(command_to_execute, &parsed) == 0) {
             if (parsed.command_count == 1) {
