@@ -402,12 +402,12 @@ void builtin_log(char **args) {
 void save_log_to_file(void) {
     char log_file_path[MAX_PATH_SIZE + 20]; // Extra space for "/.shell_history"
     
-    // Check if home_directory + "/.shell_history" fits in the buffer
-    if (strlen(home_directory) + 16 >= sizeof(log_file_path)) {
+    // Use shell_start_directory instead of home_directory
+    if (strlen(shell_start_directory) + 16 >= sizeof(log_file_path)) {
         return; // Path too long
     }
     
-    int ret = snprintf(log_file_path, sizeof(log_file_path), "%s/.shell_history", home_directory);
+    int ret = snprintf(log_file_path, sizeof(log_file_path), "%s/.shell_history", shell_start_directory);
     if (ret >= (int)sizeof(log_file_path)) {
         return; // Path was truncated
     }
@@ -428,12 +428,12 @@ void save_log_to_file(void) {
 void load_log_from_file(void) {
     char log_file_path[MAX_PATH_SIZE + 20]; // Extra space for "/.shell_history"
     
-    // Check if home_directory + "/.shell_history" fits in the buffer
-    if (strlen(home_directory) + 16 >= sizeof(log_file_path)) {
+    // Use shell_start_directory instead of home_directory
+    if (strlen(shell_start_directory) + 16 >= sizeof(log_file_path)) {
         return; // Path too long
     }
     
-    int ret = snprintf(log_file_path, sizeof(log_file_path), "%s/.shell_history", home_directory);
+    int ret = snprintf(log_file_path, sizeof(log_file_path), "%s/.shell_history", shell_start_directory);
     if (ret >= (int)sizeof(log_file_path)) {
         return; // Path was truncated
     }
