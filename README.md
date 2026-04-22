@@ -1,4 +1,4 @@
-# Custom Unix C Shell
+# Custom Unix Shell
 
 A feature-rich Unix shell implementation written in C with support for job control, signal handling, and various built-in commands.
 
